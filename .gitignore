@@ -1,0 +1,27 @@
+# ===== 비밀값 =====
+.env
+!.env.example
+
+# ===== 재배포 불가 자산 (사용자가 직접 받아 넣는 파일) =====
+# Envato Elements 샘플 영상과 그 캡처
+skills/yangphago-motion/assets/samples/
+skills/yangphago-motion/references/analysis/*.jpg
+# Pixabay 음원 (단독 재배포 금지)
+skills/yangphago-motion/assets/music/*.mp3
+# 티몬몬소리·나눔스퀘어 (각자 내려받아 KRD.ttf·KRS.ttf로 저장)
+skills/yangphago-motion/assets/fonts/KRD.ttf
+skills/yangphago-motion/assets/fonts/KRS.ttf
+
+# ===== 실행 부산물 =====
+__pycache__/
+*.pyc
+node_modules/
+package-lock.json
+outputs/
+
+# ===== OS · 편집기 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

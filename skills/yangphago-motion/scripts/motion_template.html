@@ -1,0 +1,425 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>yangphago motion (A안 미니멀 키네틱 템플릿)</title>
+<!--
+  사용법: 프로젝트 폴더에 motion.html로 복사 → fonts/KRD.ttf, fonts/KRS.ttf, beatmap.js, music/final.wav 준비
+  ① 아래 SC(장면 목록)만 고쳐서 내용 작성 (단위: 박) ② ?t=초 로 특정 시점 미리보기
+  ③ node render.js stills motion.html out/check 1 2.5 … / node render.js video motion.html music/final.wav out/final.mp4
+  렌더러 조건: window.BEATMAP, render(t), cv, window.fontsReady
+  동작 근거: references/style-guide.md, references/analysis/report.md (샘플 10편 원프레임 분석)
+-->
+<style>
+  @font-face { font-family: KRD; src: url(fonts/KRD.ttf), url(fonts/Paperlogy-9Black.ttf); }   /* KRD 없으면(배포본) 페이퍼로지 Black */
+  @font-face { font-family: KRS; src: url(fonts/KRS.ttf), url(fonts/Paperlogy-6SemiBold.ttf); }
+  @font-face { font-family: PL5; src: url(fonts/Paperlogy-5Medium.ttf); }
+  @font-face { font-family: PL6; src: url(fonts/Paperlogy-6SemiBold.ttf); }
+  @font-face { font-family: PL7; src: url(fonts/Paperlogy-7Bold.ttf); }
+  @font-face { font-family: PL8; src: url(fonts/Paperlogy-8ExtraBold.ttf); }
+  @font-face { font-family: PL9; src: url(fonts/Paperlogy-9Black.ttf); }
+  html, body { margin: 0; background: #070707; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; cursor: pointer; }
+  #hint { position: fixed; left: 50%; bottom: 7%; transform: translateX(-50%); padding: 12px 26px;
+          background: #B026FF; color: #070707; font: 700 20px sans-serif; border-radius: 999px; pointer-events: none; }
+</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div id="hint">▶ 클릭: 재생/일시정지 · ←/→: 5초 이동</div>
+<audio id="au" src="music/final.wav" preload="auto"></audio>
+<script src="beatmap.js"></script>
+<script src="scenes.js"></script><!-- make_storyboard.py가 storyboard.json에서 생성. 없으면 아래 데모 SC 사용 -->
+<script>
+// ================= 기본 설정 =================
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const W = 1920, H = 1080;
+const BM = window.BEATMAP;
+const BT = 60 / BM.bpm, DUR = BM.duration;
+// 색감: storyboard.json palette {bg 배경, main 주(글자), accent 강조, sub 보조} — 없으면 기본 블랙·화이트·퍼플
+// 'black' 모드 배경 = bg, 'white'(반전) 모드 배경 = main
+const PAL = window.PALETTE || {};
+const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const rgba = (h, a) => `rgba(${hexRGB(h).join(',')},${a})`;
+const BK = PAL.bg || '#070707', WH = PAL.main || '#F4F4F0', PU = PAL.accent || '#B026FF', PL = PAL.sub || '#D9A3FF';
+const GR = window.PALETTE ? '#' + hexRGB(BK).map((c, i) => Math.round(c + (hexRGB(WH)[i] - c) * .45).toString(16).padStart(2, '0')).join('') : '#6E6E6E';
+// 글꼴: D=티몬몬소리 Black · S=나눔스퀘어 ExtraBold · P5~P9=페이퍼로지 Medium~Black (assets/fonts/preview.jpg)
+const FACE = { D: 'KRD', S: 'KRS', P5: 'PL5', P6: 'PL6', P7: 'PL7', P8: 'PL8', P9: 'PL9' };
+for (const k in FACE) FACE[k] = `"${FACE[k]}","Malgun Gothic",sans-serif`;
+const D = FACE[window.FONT_TITLE] || FACE.D;        // 제목용 (storyboard.json fonts.title)
+const S = FACE[window.FONT_BODY] || FACE.S;         // 본문용 (storyboard.json fonts.body)
+const CREDIT = '';                                  // 하단 작은 회색 한 줄, 비우면 표시 안 함
+const SUB = '';                                     // 엔딩 yangphago 아래 부제
+const OUTRO_TOP = window.OUTRO_TOP ?? 'made by';    // 엔딩 윗줄 (storyboard.json outro, 빈 문자열이면 생략)
+const OUTRO_WORD = window.OUTRO_WORD || 'yangphago'; // 엔딩 큰 글자
+
+// 엔딩 타이밍: gap(2박 정적) → 임팩트 → 마지막 한 방 (beatmap에 gap이 없으면 끝에서 10박 전)
+// outro: "" (엔딩 없음)이면 본문이 끝까지 이어지고 엔딩을 그리지 않는다
+const OS = window.NO_OUTRO ? Infinity : BM.gap ? BM.gap[0] : DUR - 10 * BT;
+const IMP = (BM.impacts || []).find(x => x >= OS - .01) ?? OS + 2 * BT;
+const FIN = (BM.impacts || []).length ? BM.impacts[BM.impacts.length - 1] : IMP + 4 * BT;
+
+// 벡터·아이콘 이미지 (tone_vectors.py로 재채색한 *_duo.png) — 예: ['laptop', 'assets/laptop_duo.png']
+const IMG = {};
+const imgReady = Promise.all([].map(([k, f]) =>
+  new Promise(r => { const im = new Image(); im.onload = r; im.onerror = r; im.src = f; IMG[k] = im; })));
+
+// ================= 이징 · 유틸 =================
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, x) => a + (b - a) * x;
+const eoE = x => { x = clamp(x); return x >= 1 ? 1 : 1 - Math.pow(2, -10 * x); };
+const eoB = x => { x = clamp(x); const c = 1.70158; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const eio = x => { x = clamp(x); return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const eiC = x => { x = clamp(x); return x * x * x; };
+const rnd = i => { const s = Math.sin(i * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const sec = s => s / BT;                            // 초 → 박 (분석값은 초 단위로 기록되어 있음)
+
+// 비트 반응: 마지막 킥/스네어 이후 경과시간으로 감쇠 곡선
+function since(arr, t) { let last = -99; for (const x of arr || []) { if (x <= t + 1e-4) last = x; else break; } return t - last; }
+const kickE = t => Math.exp(-since(BM.kicks, t) / 0.12);
+
+// ================= 그리기 도구 =================
+function tw(s, size, face = D, ls = 0) {
+  ctx.save(); ctx.font = `${size}px ${face}`; ctx.letterSpacing = ls + 'px';
+  const w = ctx.measureText(s).width; ctx.restore(); return w;
+}
+function T(s, x, y, size, col, o = {}) {
+  const a = o.alpha ?? 1;
+  if (a <= 0 || !s) return;
+  ctx.save();
+  ctx.font = `${size}px ${o.face || D}`;
+  ctx.letterSpacing = (o.ls || 0) + 'px';
+  ctx.textAlign = o.align || 'center';
+  ctx.textBaseline = 'middle';
+  ctx.globalAlpha *= a;
+  if (o.blur > .3) ctx.filter = `blur(${o.blur}px)`;
+  ctx.translate(x, y);
+  if (o.rot) ctx.rotate(o.rot);
+  const sc = o.sc ?? 1;
+  ctx.scale(sc * (o.sx ?? 1), sc * (o.sy ?? 1));
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  if (o.stroke) { ctx.lineWidth = o.lw || 4; ctx.lineJoin = 'round'; ctx.strokeStyle = col; ctx.strokeText(s, 0, 0); }
+  else { ctx.fillStyle = col; ctx.fillText(s, 0, 0); }
+  ctx.restore();
+}
+function R(x, y, w, h, col, o = {}) {
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  ctx.beginPath();
+  if (o.r) ctx.roundRect(x, y, w, h, o.r); else ctx.rect(x, y, w, h);
+  if (o.lw) { ctx.lineWidth = o.lw; ctx.strokeStyle = col; ctx.stroke(); }
+  else { ctx.fillStyle = col; ctx.fill(); }
+  ctx.restore();
+}
+function C(x, y, r, col, o = {}) {
+  if ((o.alpha ?? 1) <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  ctx.beginPath(); ctx.arc(x, y, r, o.a0 ?? 0, o.a1 ?? Math.PI * 2);
+  if (o.lw) { ctx.lineWidth = o.lw; ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.stroke(); }
+  else { ctx.fillStyle = col; ctx.fill(); }
+  ctx.restore();
+}
+function P(cx, cy, r, n, rot, col, o = {}) {        // 정다각형
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = rot + i * 2 * Math.PI / n - Math.PI / 2;
+    ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+  }
+  ctx.closePath();
+  if (o.lw) { ctx.lineWidth = o.lw; ctx.strokeStyle = col; ctx.stroke(); }
+  else { ctx.fillStyle = col; ctx.fill(); }
+  ctx.restore();
+}
+function L(pts, col, lw, p = 1, o = {}) {           // 꺾은선을 p(0~1)만큼만 그림
+  if (p <= 0 || (o.alpha ?? 1) <= 0) return;
+  let tot = 0; const seg = [];
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(d); tot += d; }
+  let rem = clamp(p) * tot;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 20; }
+  ctx.lineWidth = lw; ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(...pts[0]);
+  for (let i = 1; i < pts.length && rem > 0; i++) {
+    const k = Math.min(1, rem / seg[i - 1]);
+    ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], k), lerp(pts[i - 1][1], pts[i][1], k)); rem -= seg[i - 1];
+  }
+  ctx.stroke(); ctx.restore();
+}
+function group(o, fn) {                             // 중심 기준 크기·회전·투명도를 묶어서 적용
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.cx !== undefined) { ctx.translate(o.cx, o.cy); if (o.rot) ctx.rotate(o.rot); ctx.scale(o.sc ?? 1, o.sc ?? 1); ctx.translate(-o.cx, -o.cy); }
+  fn(); ctx.restore();
+}
+function img(k, x, y, w, o = {}) {                  // 이미지 (가로폭 기준, 가운데 정렬)
+  const im = IMG[k];
+  if (!im || !im.naturalWidth || (o.alpha ?? 1) <= 0) return;
+  const h = w * im.naturalHeight / im.naturalWidth;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  ctx.drawImage(im, x - w / 2, y - h / 2, w, h);
+  ctx.restore();
+}
+
+// ================= A안 움직임 사전 =================
+// 시간 인자(f, p)는 모두 '등장 후 경과 박'. 괄호 안은 근거 샘플과 측정값(초) → 90 BPM 기준 박 환산
+// 원칙: 최종 배치(줄바꿈·위치)를 먼저 정하고 글자를 공개한다. 공개 중 다시 가운데 정렬하지 않는다.
+function chars(s, size, face, ls) {                 // 최종 배치 기준 글자별 x (가운데 정렬)
+  const full = tw(s, size, face, ls); let x = -full / 2;
+  return Array.from(s).map(c => { const w = tw(c, size, face, ls); const o = { c, x: x + w / 2 }; x += w; return o; });
+}
+// 타자 + 커서 (63211445: 왼쪽 시작점 고정, 약 5.5자/초 → cps로 지정, 공백도 한 글자로 셈)
+function typeT(s, x, y, size, col, f, o = {}) {
+  if (f <= 0) return;
+  const face = o.face || D, ls = o.ls || 0, ch = Array.from(s), cps = o.cps ?? 5.5;
+  const n = Math.min(ch.length, Math.floor(f * BT * cps) + 1), sub = ch.slice(0, n).join('');
+  const x0 = o.left ?? x - tw(s, size, face, ls) / 2;   // 완성 문장 기준 왼쪽 끝 고정
+  T(sub, x0, y, size, col, { ...o, align: 'left' });
+  if (n < ch.length || Math.floor(f * 2) % 2 === 0) R(x0 + tw(sub, size, face, ls) + 6, y - size * .45, size * .07 + 3, size * .9, o.cc || PU);
+}
+// 글자별 블러 등장·퇴장 (11971627 Signal/Neural: 앞 글자부터 차례로 선명해지고, 퇴장도 앞 글자부터 흐려짐)
+//   o.d: 한 글자 동작(박) · o.st: 글자 간 지연(박) · o.out: 퇴장 시작(박, 생략 시 퇴장 없음)
+function blurIn(s, x, y, size, col, f, o = {}) {
+  const face = o.face || D, ls = o.ls || 0, d = o.d ?? .5, st = o.st ?? .06;
+  chars(s, size, face, ls).forEach((k, i) => {
+    let e = eoE((f - i * st) / d);
+    if (o.out !== undefined) e *= 1 - eio((f - o.out - i * st) / d);
+    if (e <= 0) return;
+    T(k.c, x + k.x, y + (1 - e) * size * .2, size, col, { ...o, face, blur: (1 - e) * 26, alpha: (o.alpha ?? 1) * e });
+  });
+}
+// 큰 반투명 글자 축소·선명화 (62295607 Clean/text: 중심 유지, 겉보기 폭 약 13% 감소, 약 0.5초 ≈ 0.75박)
+function shrinkIn(s, x, y, size, col, f, o = {}) {
+  if (f < 0) return;
+  const e = eoE(f / (o.d ?? .75));
+  T(s, x, y, size, col, { ...o, sc: lerp(o.from ?? 1.6, 1, e), alpha: (o.alpha ?? 1) * lerp(.25, 1, e), blur: (1 - e) * 18 });
+}
+// 자간 수축 (62999763 Ready/Set: 넓은 자간 → 촘촘하게 정착, 약 1박)
+function trackIn(s, x, y, size, col, f, o = {}) {
+  if (f < 0) return;
+  const e = eoE(f / (o.d ?? .8));
+  T(s, x, y, size, col, { ...o, ls: lerp(o.from ?? size * .6, o.ls || 0, e), alpha: (o.alpha ?? 1) * clamp(f / .15) });
+}
+// 단어 교체 (11971627 Real → Real words come to life: 같은 자리에서 step 박마다 문구 확장)
+function swap(words, x, y, size, col, f, step = 1, o = {}) {
+  if (f < 0) return;
+  const i = Math.min(words.length - 1, Math.floor(f / step)), g = (f - i * step) * BT / .13;
+  T(words[i], x, y + (1 - eoE(g)) * size * .3, size, col, { ...o, alpha: (o.alpha ?? 1) * clamp(g * 1.5) });
+}
+// 단어 순차 등장 + 현재 단어만 강조색 → 다음 단어가 나오면 흰색 복귀 (11971627, 60806086)
+function wordSeq(s, x, y, size, col, f, o = {}) {
+  const face = o.face || D, ls = o.ls || 0, st = o.st ?? 1, ws = s.split(' ');
+  const sp = tw(' ', size, face, ls);
+  let cx = x - tw(s, size, face, ls) / 2;
+  ws.forEach((w, i) => {
+    const g = f - i * st, ww = tw(w, size, face, ls);
+    if (g >= 0) {
+      const cur = g < st && i < ws.length - 1 || (i === ws.length - 1 && g < st);
+      T(w, cx, y + (1 - eoE(g / .35)) * size * .25, size, cur ? (o.hc || PU) : col,
+        { ...o, face, align: 'left', alpha: (o.alpha ?? 1) * clamp(g / .2), glow: cur ? (o.hc || PU) : 0, gb: 24 });
+    }
+    cx += ww + sp;
+  });
+}
+// 분산 조립 (62999763 Make/Fast: 글자별 위치·크기·회전이 달랐다가 약 0.58초 ≈ 0.9박에 정렬)
+function scatter(s, x, y, size, col, f, o = {}) {
+  if (f <= 0) return;
+  const face = o.face || D, ls = o.ls || 0, d = o.d ?? .9;
+  let q = clamp(f / d);
+  if (o.out !== undefined && f > o.out) q = 1 - clamp((f - o.out) / d);
+  chars(s, size, face, ls).forEach((k, i) => {
+    const e = eoE(q), dx = (rnd(i + 3) - .5) * 900 * (1 - e), dy = (rnd(i + 11) - .5) * 500 * (1 - e);
+    T(k.c, x + k.x + dx, y + dy, size, col, { ...o, face, sc: lerp(.4 + rnd(i + 7) * 1.6, 1, e), rot: (rnd(i + 5) - .5) * 2 * (1 - e), alpha: (o.alpha ?? 1) * clamp(q * 2) });
+  });
+}
+// 줄별 조립 (57523104 SUCCESS/LOVES/SPEED: 줄마다 약 0.1초 ≈ 0.15박 간격으로 측면 진입)
+//   lines = [[text, size, col], ...] · o.gap: 줄 간격(px) · o.dir: 1=오른쪽에서, -1=왼쪽에서
+function lines(ls_, x, y, f, o = {}) {
+  const gap = o.gap ?? 20, st = o.st ?? .15, d = o.d ?? .6;
+  const tot = ls_.reduce((a, [, sz]) => a + sz, 0) + gap * (ls_.length - 1);
+  let cy = y - tot / 2;
+  ls_.forEach(([s, sz, col], i) => {
+    const e = eoE((f - i * st) / d), dir = (o.dir ?? 1) * (i % 2 ? -1 : 1);
+    if (e > 0) T(s, x + (1 - e) * 700 * dir, cy + sz / 2, sz, col, { face: o.face || D, alpha: clamp(e * 3) });
+    cy += sz + gap;
+  });
+}
+// 외곽선 → 채움 수평 스캔 (60944035: 문구 일부 높이만 흰색으로 채워지는 띠가 지나감)
+function outlineFill(s, x, y, size, col, p, o = {}) {
+  const lc = o.lc || PU;
+  T(s, x, y, size, lc, { ...o, stroke: true, lw: o.lw || 4 });
+  const h = size * 1.2, top = y - h / 2, cut = top + h * eio(p);
+  if (p <= 0) return;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, top, W, cut - top); ctx.clip();
+  T(s, x, y, size, col, o);
+  ctx.restore();
+}
+// 반짝 별 (11971627, 62295607: 4각 별이 f 0→.8박 동안 커졌다 작아짐)
+function sparkle(x, y, r, f, col = PU) {
+  if (f < 0 || f > .8) return;
+  const s = Math.sin(Math.PI * f / .8) * r;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(f * .8); ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 20;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr = i % 2 ? s * .22 : s; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+  ctx.fill(); ctx.restore();
+}
+// 강조어 색: parts = [['Motion ready ', ink], ['now', PU]] → 한 줄 가운데 정렬
+function richLine(parts, x, y, size, o = {}) {
+  const face = o.face || D, ls = o.ls || 0;
+  let cx = x - parts.reduce((a, [s]) => a + tw(s, size, face, ls), 0) / 2;
+  parts.forEach(([s, col]) => {
+    T(s, cx, y, size, col, { ...o, face, align: 'left', glow: col === PU ? PU : 0, gb: 24 });
+    cx += tw(s, size, face, ls);
+  });
+}
+// 선택 하이라이트 (63211445: 글자 폭에 맞춘 박스가 p 0→1 동안 왼→오로 늘어남)
+function highlight(s, x, y, size, col, p, o = {}) {
+  const w = tw(s, size, o.face || D, o.ls || 0);
+  R(x - w / 2 - 12, y - size * .6, (w + 24) * eoE(p), size * 1.2, o.bc || PU, { alpha: o.alpha ?? 1 });
+  T(s, x, y, size, col, o);
+}
+
+// ================= JSON 장면 → 그리기 (storyboard.json의 scenes[].items) =================
+// item 공통: fn, at(장면 안 시작 박), until(사라지는 박), x, y, size, color('ink'|'pu'|'pl'|'gr'|'wh'|'bk'|'#hex'), font('S'=본문체), o(함수 옵션)
+const COL = { pu: PU, pl: PL, gr: GR, wh: WH, bk: BK };
+const colorOf = (c, ink) => !c || c === 'ink' ? ink : (COL[c] ?? c);
+function item(it, b, ink) {
+  const f = b - (it.at || 0);
+  if (f < 0 || (it.until !== undefined && b >= it.until)) return;
+  const x = it.x ?? W / 2, y = it.y ?? 540, sz = it.size ?? 120, col = colorOf(it.color, ink);
+  const o = { ...(it.o || {}) };
+  for (const k of ['hc', 'lc', 'bc', 'cc']) if (o[k]) o[k] = colorOf(o[k], ink);
+  if (it.font) o.face = it.font === 'S' ? S : (FACE[it.font] || D);
+  switch (it.fn) {
+    case 'text': T(it.text, x, y, sz, col, { ...o, alpha: clamp(f / .15) }); break;
+    case 'typeT': case 'blurIn': case 'shrinkIn': case 'trackIn': case 'scatter': case 'wordSeq':
+      window[it.fn](it.text, x, y, sz, col, f, o); break;
+    case 'outlineFill': case 'highlight': window[it.fn](it.text, x, y, sz, col, f / (it.d ?? 1), o); break;
+    case 'swap': swap(it.words, x, y, sz, col, f, it.step ?? 1, o); break;
+    case 'lines': lines(it.lines.map(([s, z, c]) => [s, z, colorOf(c, ink)]), x, y, f, o); break;
+    case 'richLine': richLine(it.parts.map(([s, c]) => [s, colorOf(c, ink)]), x, y, sz, { ...o, alpha: clamp(f / .3) }); break;
+    case 'sparkle': sparkle(x, y, it.r ?? 46, f, colorOf(it.color || 'pu', ink)); break;
+    case 'img': img(it.key, x, y, it.w ?? 600, { ...o, alpha: clamp(f / .3) }); break;
+    // 도형: ring(퍼지는 원) · poly(튀어나와 도는 다각형) · bar(왼→오 막대) · line(그려지는 선)
+    case 'ring': C(x, y, (it.r ?? 220) * eoE(f / .5), col, { lw: it.lw ?? 6, alpha: 1 - clamp((f - (it.hold ?? 1.5)) / .5) }); break;
+    case 'poly': P(x, y, (it.r ?? 200) * eoB(f / .4), it.n ?? 3, (it.spin ?? .3) * f, col, { lw: it.lw ?? 6 }); break;
+    case 'bar': R(x - (it.w ?? 600) / 2, y - (it.h ?? 12) / 2, (it.w ?? 600) * eoE(f / .4), it.h ?? 12, col); break;
+    case 'line': L(it.pts, col, it.lw ?? 6, f / (it.d ?? .5)); break;
+  }
+}
+function fromJSON(list) {                           // scenes.js: [{from, to, bg, items, draw}]
+  return list.map(s => ({ ...s, draw: s.draw ? window[s.draw] : (b, t, ink) => s.items.forEach(it => item(it, b, ink)) }));
+}
+
+// ================= 장면 (단위: 박) =================
+// scenes.js가 있으면 그것을 사용하고, 아래 SC는 데모 겸 직접 JS로 쓸 때의 예시
+// { from, to, bg, draw(b, t, ink) }  b = 장면 안 경과 박, ink = 현재 배경에 맞는 글자색
+//   bg: 'black' | 'white' | 'glow'  또는  [[0,'white'],[1.25,'black']]처럼 장면 안에서 배경만 따로 전환
+//   (11971627: 흰 배경 0.83초 동안 문장은 전환을 넘어 이어짐 · 배경 전환은 블렌딩 없이 한 프레임 컷)
+// 규칙: 한 화면 한 문구 · 정중앙 · 등장 반 박 · 1~2박마다 새 문구 · 흰 배경은 전체의 약 20% · 퍼플은 한 곳만
+// 한국어 주의: 샘플은 짧은 영문. 한글 문장은 읽기 시간을 늘리고(문장 2~3박), 받침 글자의 블러 가독성을 stills로 확인
+const SC = window.SCENES ? fromJSON(window.SCENES) : [
+  { from: 0, to: 4, bg: 'black', draw: (b, t, ink) => {
+    typeT('This system feels', W / 2, 540, 96, ink, b);
+  } },
+  { from: 4, to: 8, bg: 'white', draw: (b, t, ink) => {
+    blurIn('Signal', W / 2, 540, 240, ink, b, { out: 3 });
+    sparkle(W / 2 + 420, 430, 46, b - 1);
+  } },
+  { from: 8, to: 12, bg: [[0, 'black'], [2, 'white'], [3, 'black']], draw: (b, t, ink) => {
+    swap(['Real', 'Real words', 'Real words come to life'], W / 2, 540, 110, ink, b, 1);
+  } },
+  { from: 12, to: 16, bg: 'glow', draw: (b, t, ink) => {
+    scatter('Make it move', W / 2, 500, 150, ink, b);
+    richLine([['Motion ready ', ink], ['now', PU]], W / 2, 680, 64, { alpha: clamp((b - 2) / .3) });
+  } },
+];
+
+// ================= 배경 =================
+function bgAt(sc, b) {                              // 장면 안 배경 전환 지원
+  if (typeof sc.bg === 'string') return sc.bg;
+  let m = sc.bg[0][1];
+  for (const [at, mode] of sc.bg) if (b >= at) m = mode;
+  return m;
+}
+function bg(mode, t) {
+  ctx.fillStyle = mode === 'white' ? WH : BK; ctx.fillRect(0, 0, W, H);
+  if (mode === 'glow') {                             // 아래쪽 보라 방사형 글로우 (킥에 맞춰 숨쉬기)
+    const g = ctx.createRadialGradient(W / 2, H * 1.05, 0, W / 2, H * 1.05, H * (.85 + .05 * kickE(t)));
+    g.addColorStop(0, rgba(PU, .55)); g.addColorStop(1, rgba(PU, 0));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ================= 엔딩: OUTRO_TOP + OUTRO_WORD (기본 made by yangphago, NO_OUTRO면 생략) =================
+function outro(t) {
+  bg('black', t);
+  const b = (t - OS) / BT, f = (t - IMP) / BT, fin = (t - FIN) / BT;
+  if (f < 0) {                                       // 2박 정적: 점들이 중심으로 모이며 커짐
+    const g = clamp(b / ((IMP - OS) / BT));
+    for (let i = 0; i < 30; i++) {
+      const a = rnd(i) * Math.PI * 2, r0 = lerp(900, 30, eiC(clamp(g + rnd(i + 3) * .15)));
+      C(W / 2 + Math.cos(a) * r0, 540 + Math.sin(a) * r0, 3, i % 4 ? PU : WH, { alpha: g });
+    }
+    C(W / 2, 540, 4 + 20 * eiC(g), WH, { glow: PU, gb: 50 });
+    return;
+  }
+  // 임팩트 → 글자가 16분음표(0.25박)마다 하나씩 떨어짐 → 마지막 한 방에서 크게 펌프 → 페이드아웃
+  const g0 = ctx.createRadialGradient(W / 2, 560, 0, W / 2, 560, 900);
+  g0.addColorStop(0, rgba(PU, .28 + .2 * kickE(t) + (fin > 0 ? .4 * Math.exp(-fin * 2) : 0))); g0.addColorStop(1, rgba(PU, 0));
+  ctx.fillStyle = g0; ctx.fillRect(0, 0, W, H);
+  const pump = 1 + .03 * kickE(t) + (fin > 0 ? .1 * Math.exp(-fin * 3) : 0);
+  group({ cx: W / 2, cy: 540, sc: pump, alpha: 1 - clamp((t - FIN - .9) / .6) }, () => {
+    if (OUTRO_TOP) blurIn(OUTRO_TOP, W / 2, 380, 92, WH, f, { face: S, ls: 30, d: .4, st: .04 });
+    // 긴 문구는 화면 폭(1700px)에 맞게 글자 크기를 줄인다
+    const word = OUTRO_WORD, size = Math.min(280, 280 * 1700 / tw(word, 280, D, 6));
+    const cs = chars(word, size, D, 6), step = Math.min(.25, 2.25 / cs.length);  // 긴 문구도 밑줄 전에 다 떨어지게
+    cs.forEach((k, i) => {
+      const g = f - .25 - i * step;
+      if (g < 0) return;
+      T(k.c, W / 2 + k.x, 590 - (1 - eoB(g / .3)) * 240, size, PU,
+        { ls: 6, sy: lerp(1.4, 1, eoE(g / .4)), alpha: clamp(g / .05), glow: PU, gb: 30 + 40 * kickE(t) + (fin > 0 ? 80 * Math.exp(-fin * 2) : 0) });
+    });
+    const full = tw(word, size, D, 6);
+    R(W / 2 - full / 2, 760, full * eoE((f - 2.6) / .5), 10, WH);
+    if (SUB) T(SUB, W / 2, 830, 32, GR, { face: S, ls: 6, alpha: clamp((f - 3) / .4) });
+    sparkle(W / 2 + full / 2 + 40, 470, 50, f - 2.4);
+  });
+}
+
+// ================= 메인 렌더 =================
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.globalCompositeOperation = 'source-over';
+  if (t >= OS) { outro(t); return; }
+  const bt = t / BT;
+  const sc = SC.find(s => bt < s.to) || SC[SC.length - 1];
+  const lb = bt - sc.from, mode = bgAt(sc, lb);
+  bg(mode, t);
+  const ink = mode === 'white' ? BK : WH;
+  // 카메라: 킥마다 펌프 + 장면 컷 순간 줌 펀치(6%→0, 약 0.15초)로 박진감
+  const z = 1 + .02 * kickE(t) + .06 * Math.exp(-lb * BT / .08);
+  ctx.save();
+  ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+  sc.draw(lb, t, ink);
+  ctx.restore();
+  if (CREDIT) T(CREDIT, W / 2, H - 48, 16, GR, { face: S, ls: 3 });
+}
+
+// ================= 미리보기 재생 =================
+window.fontsReady = Promise.all([...['KRD', 'KRS', 'PL5', 'PL6', 'PL7', 'PL8', 'PL9'].map(f => document.fonts.load(`100px ${f}`).catch(() => {})), imgReady]);
+const au = document.getElementById('au'), hint = document.getElementById('hint');
+const q0 = parseFloat(new URLSearchParams(location.search).get('t') || '0');
+fontsReady.then(() => render(q0));
+au.addEventListener('loadedmetadata', () => { au.currentTime = q0; });   // ?t=초 로 시작 위치 지정
+// 간이 서버는 구간 요청을 지원하지 않아 탐색이 안 됨 → 음원을 메모리에 받아서 재생
+fetch(au.src).then(r => r.blob()).then(b => { au.src = URL.createObjectURL(b); }).catch(() => {});
+cv.onclick = () => { if (au.paused) { au.play(); hint.style.display = 'none'; } else au.pause(); };
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') au.currentTime = Math.min(DUR, au.currentTime + 5);
+  if (e.key === 'ArrowLeft') au.currentTime = Math.max(0, au.currentTime - 5);
+  if (e.key === ' ') cv.onclick();
+});
+(function loop() { if (!au.paused) render(au.currentTime); requestAnimationFrame(loop); })();
+</script>

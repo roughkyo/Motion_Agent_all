@@ -1,0 +1,9 @@
+# yangphago-motion 스킬 파이썬 의존성
+numpy
+scipy
+librosa            # 음원 박자 분석 (arrange.py, beat_grid.py)
+Pillow             # 검수 시트·벡터 재채색
+PyMuPDF            # PDF 텍스트 추출 (import fitz)
+python-pptx        # PPTX 텍스트 추출
+python-docx        # DOCX 텍스트 추출
+google-genai       # (선택) Lyria AI 음악 생성

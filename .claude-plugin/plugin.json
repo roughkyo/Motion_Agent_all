@@ -1,0 +1,9 @@
+{
+  "name": "motion-agent",
+  "version": "1.0.0",
+  "description": "수업 자료(PDF·PPTX·DOCX)를 비트에 맞춘 키네틱 타이포그래피 모션그래픽(mp4)으로 만드는 Claude Code 스킬 패키지",
+  "author": { "name": "yangphago", "url": "https://github.com/roughkyo" },
+  "homepage": "https://github.com/roughkyo/Motion_Agent_all",
+  "repository": "https://github.com/roughkyo/Motion_Agent_all",
+  "keywords": ["motion-graphics", "kinetic-typography", "video", "education", "storyboard"]
+}

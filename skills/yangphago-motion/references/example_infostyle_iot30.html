@@ -1,0 +1,633 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>IoT 첫걸음 · 온습도 데이터 온라인 저장 (30s)</title>
+<style>
+  @font-face { font-family: KRD; src: url(fonts/KRD.ttf); }
+  @font-face { font-family: KRS; src: url(fonts/KRS.ttf); }
+  html, body { margin: 0; background: #070707; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; cursor: pointer; }
+  #hint { position: fixed; left: 50%; bottom: 7%; transform: translateX(-50%); padding: 12px 26px;
+          background: #B026FF; color: #070707; font: 700 20px sans-serif; border-radius: 999px; pointer-events: none; }
+</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div id="hint">▶ 클릭: 재생/일시정지 · ←/→: 5초 이동</div>
+<audio id="au" src="music/iot30.wav" preload="auto"></audio>
+<script src="beatmap30.js"></script>
+<script>
+// ================= 기본 설정 =================
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const W = 1920, H = 1080;
+const BM = window.BEATMAP;
+const BT = 60 / BM.bpm, BAR = BT * 4, DUR = BM.duration;
+const BK = '#070707', WH = '#F4F4F0', PU = '#B026FF', PL = '#D9A3FF', GR = '#6E6E6E', DK = '#161616';
+const D = '"KRD","Malgun Gothic",sans-serif';       // 헤드라인 (TmonMonsori Black)
+const S = '"KRS","Malgun Gothic",sans-serif';       // 본문 (NanumSquare ExtraBold)
+const MONO = '"Consolas","D2Coding",monospace';
+
+// Pixabay 벡터 3컷 (tone_vectors.py로 보라 톤 재채색)
+const IMG = {};
+const imgReady = Promise.all([['laptop', 'computer-2023252'], ['server', 'cloud-2023901'], ['db', 'computer-1295318']].map(([k, f]) =>
+  new Promise(r => { const im = new Image(); im.onload = r; im.onerror = r; im.src = `assets/${f}_duo.png`; IMG[k] = im; })));
+
+// ================= 이징 · 유틸 =================
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, x) => a + (b - a) * x;
+const eoE = x => { x = clamp(x); return x >= 1 ? 1 : 1 - Math.pow(2, -10 * x); };
+const eoB = x => { x = clamp(x); const c = 1.70158; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const eio = x => { x = clamp(x); return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const eiC = x => { x = clamp(x); return x * x * x; };
+const rnd = i => { const s = Math.sin(i * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+
+// 비트 반응: 마지막 킥/스네어 이후 경과시간으로 감쇠 곡선
+function since(arr, t) { let last = -99; for (const x of arr) { if (x <= t + 1e-4) last = x; else break; } return t - last; }
+function lastIdx(arr, t) { let k = -1; arr.forEach((x, i) => { if (x <= t + 1e-4) k = i; }); return k; }
+const kickE = t => Math.exp(-since(BM.kicks, t) / 0.12);
+const snE = t => Math.exp(-since(BM.snares, t) / 0.09);
+const impE = t => Math.exp(-since(BM.impacts, t) / 0.25);
+
+// ================= 그리기 도구 =================
+function tw(s, size, face = D, ls = 0) {
+  ctx.save(); ctx.font = `${size}px ${face}`; ctx.letterSpacing = ls + 'px';
+  const w = ctx.measureText(s).width; ctx.restore(); return w;
+}
+function T(s, x, y, size, col, o = {}) {
+  const a = o.alpha ?? 1;
+  if (a <= 0 || !s) return;
+  ctx.save();
+  ctx.font = `${size}px ${o.face || D}`;
+  ctx.letterSpacing = (o.ls || 0) + 'px';
+  ctx.textAlign = o.align || 'center';
+  ctx.textBaseline = 'middle';
+  ctx.globalAlpha *= a;
+  ctx.translate(x, y);
+  if (o.rot) ctx.rotate(o.rot);
+  const sc = o.sc ?? 1;
+  ctx.scale(sc * (o.sx ?? 1), sc * (o.sy ?? 1));
+  if (o.reveal !== undefined) {                     // 마스크 안에서 아래→위로 올라오는 글자
+    const r = clamp(o.reveal);
+    if (r <= 0) { ctx.restore(); return; }
+    const w = ctx.measureText(s).width;
+    const ax = o.align === 'left' ? 0 : o.align === 'right' ? -w : -w / 2;
+    ctx.beginPath(); ctx.rect(ax - 30, -size * .66, w + 60, size * 1.32); ctx.clip();
+    ctx.translate(0, (1 - eoE(r)) * size * 1.25);
+  }
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  if (o.stroke) { ctx.lineWidth = o.lw || 4; ctx.lineJoin = 'round'; ctx.strokeStyle = col; ctx.strokeText(s, 0, 0); }
+  else { ctx.fillStyle = col; ctx.fillText(s, 0, 0); }
+  ctx.restore();
+}
+// 쾅! 하고 박히는 글자 (f: 등장 후 경과 박자)
+function slam(s, x, y, size, col, f, o = {}) {
+  if (f < 0) return;
+  const k = lerp(o.from ?? 2.2, 1, eoE(f / (o.d ?? .22)));
+  T(s, x, y, size, col, { ...o, sc: (o.sc ?? 1) * k, alpha: (o.alpha ?? 1) * clamp(f / .04) });
+}
+// 타자 치듯 나타나는 글자 (가운데 정렬이어도 글자가 흔들리지 않도록 왼쪽 기준으로 그림)
+function typeT(s, x, y, size, col, p, o = {}) {
+  if (p <= 0) return;
+  const ch = Array.from(s), n = Math.floor(clamp(p) * ch.length), sub = ch.slice(0, n).join('');
+  const face = o.face || D, full = tw(s, size, face, o.ls || 0);
+  const x0 = o.align === 'center' ? x - full / 2 : o.align === 'right' ? x - full : x;
+  T(sub, x0, y, size, col, { ...o, align: 'left' });
+  if (o.cursor && p < 1.6 && (p < 1 || Math.floor(p * 6) % 2 === 0)) {
+    R(x0 + tw(sub, size, face, o.ls || 0) + 4, y - size * .45, size * .5, size * .9, o.cc || PU, { alpha: o.alpha ?? 1 });
+  }
+}
+function R(x, y, w, h, col, o = {}) {
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  ctx.beginPath();
+  if (o.r) ctx.roundRect(x, y, w, h, o.r); else ctx.rect(x, y, w, h);
+  if (o.lw) { ctx.lineWidth = o.lw; ctx.strokeStyle = col; if (o.dash) ctx.setLineDash(o.dash); ctx.stroke(); }
+  else { ctx.fillStyle = col; ctx.fill(); }
+  ctx.restore();
+}
+function C(x, y, r, col, o = {}) {
+  if ((o.alpha ?? 1) <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  ctx.beginPath(); ctx.arc(x, y, r, o.a0 ?? 0, o.a1 ?? Math.PI * 2);
+  if (o.lw) { ctx.lineWidth = o.lw; ctx.strokeStyle = col; ctx.lineCap = o.cap || 'round'; ctx.stroke(); }
+  else { ctx.fillStyle = col; ctx.fill(); }
+  ctx.restore();
+}
+function P(cx, cy, r, n, rot, col, o = {}) {       // 정다각형
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = rot + i * 2 * Math.PI / n - Math.PI / 2;
+    ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+  }
+  ctx.closePath();
+  if (o.lw) { ctx.lineWidth = o.lw; ctx.lineJoin = 'miter'; ctx.strokeStyle = col; ctx.stroke(); }
+  else { ctx.fillStyle = col; ctx.fill(); }
+  ctx.restore();
+}
+// 꺾은선을 p(0~1)만큼만 그림 → 선이 그려져 나가는 효과
+function L(pts, col, lw, p = 1, o = {}) {
+  if (p <= 0 || (o.alpha ?? 1) <= 0) return null;
+  let tot = 0; const seg = [];
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(d); tot += d; }
+  let rem = clamp(p) * tot, end = pts[0];
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 20; }
+  if (o.dash) ctx.setLineDash(o.dash);
+  ctx.lineWidth = lw; ctx.strokeStyle = col; ctx.lineCap = o.cap || 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(...pts[0]);
+  for (let i = 1; i < pts.length && rem > 0; i++) {
+    const k = Math.min(1, rem / seg[i - 1]);
+    end = [lerp(pts[i - 1][0], pts[i][0], k), lerp(pts[i - 1][1], pts[i][1], k)];
+    ctx.lineTo(...end); rem -= seg[i - 1];
+  }
+  ctx.stroke(); ctx.restore();
+  return end;
+}
+function pill(s, x, y, size, bg, fg, o = {}) {      // 알약 모양 태그
+  const w = tw(s, size, o.face || S, o.ls || 0) + size * 1.2, h = size * 1.7;
+  const sc = o.sc ?? 1;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1; ctx.translate(x, y); ctx.scale(sc, sc);
+  const ax = o.align === 'center' ? -w / 2 : o.align === 'right' ? -w : 0;
+  R(ax, -h / 2, w, h, bg, { r: h / 2 });
+  if (o.outline) R(ax, -h / 2, w, h, fg, { r: h / 2, lw: 3 });
+  T(s, ax + w / 2, 2, size, fg, { face: o.face || S, ls: o.ls || 0 });
+  ctx.restore();
+  return w;
+}
+function group(o, fn) {                             // 이동·크기·투명도를 묶어서 적용
+  if ((o.alpha ?? 1) <= 0) return;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  ctx.translate(o.x || 0, o.y || 0);
+  if (o.cx !== undefined) { ctx.translate(o.cx, o.cy); if (o.rot) ctx.rotate(o.rot); ctx.scale(o.sc ?? 1, o.sy ?? o.sc ?? 1); ctx.translate(-o.cx, -o.cy); }
+  fn(); ctx.restore();
+}
+function rings(cx, cy, f, col = PU, maxR = 1000) {  // 충격파 링
+  for (let k = 0; k < 3; k++) {
+    const g = (f - k * .14) / 1.3;
+    if (g <= 0 || g >= 1) continue;
+    C(cx, cy, maxR * eoE(g), col, { lw: 18 * (1 - g), alpha: 1 - g });
+  }
+}
+function burst(cx, cy, f, seed, n = 26, maxR = 900) {   // 도형 파편이 사방으로 튐
+  if (f < 0) return;
+  for (let i = 0; i < n; i++) {
+    const a = rnd(seed + i) * Math.PI * 2, sp = .35 + .65 * rnd(seed + i + 40);
+    const r = maxR * sp * eoE(f / 1.6) + f * 20;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r * .75;
+    const sz = 14 + 34 * rnd(seed + i + 80), rot = f * (rnd(seed + i + 9) - .5) * 4, col = i % 3 ? PU : WH;
+    const al = clamp(1.2 - f / 6);
+    if (i % 3 === 0) P(x, y, sz, 3, rot, col, { lw: 4, alpha: al });
+    else if (i % 3 === 1) P(x, y, sz, 4, rot, col, { lw: 4, alpha: al });
+    else C(x, y, sz * .7, col, { lw: 4, alpha: al });
+  }
+}
+function img(k, x, y, w, o = {}) {                  // 벡터 이미지 (가로폭 기준, 가운데 정렬)
+  const im = IMG[k];
+  if (!im || !im.naturalWidth || (o.alpha ?? 1) <= 0) return null;
+  const h = w * im.naturalHeight / im.naturalWidth;
+  ctx.save(); ctx.globalAlpha *= o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.gb || 30; }
+  ctx.drawImage(im, x - w / 2, y - h / 2, w, h);
+  ctx.restore();
+  return { x0: x - w / 2, y0: y - h / 2, w, h };
+}
+
+// ================= 소품 =================
+function drawDHT(x, y, s, p = 1, o = {}) {
+  // DHT11 모듈: 구멍 뚫린 몸통 + 핀 3개
+  const w = 170 * s, h = 220 * s;
+  R(x - w / 2, y - h / 2, w, h, DK, { alpha: clamp(p * 2 - .6) });
+  L([[x - w / 2, y - h / 2], [x + w / 2, y - h / 2], [x + w / 2, y + h / 2], [x - w / 2, y + h / 2], [x - w / 2, y - h / 2]], WH, 5, p * 1.4);
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 4; c++) {
+    const i = r * 4 + c, q = clamp((p - .3 - i * .02) * 5), lit = o.lit ? o.lit(i) : 0;
+    R(x - w / 2 + 22 * s + c * 34 * s, y - h / 2 + 22 * s + r * 36 * s, 24 * s * q, 24 * s * q, lit ? PU : '#3a3a3a', { glow: lit ? PU : 0 });
+  }
+  [0, 1, 2].forEach(i => L([[x + (i - 1) * 46 * s, y + h / 2], [x + (i - 1) * 46 * s, y + h / 2 + 60 * s]], i === 0 ? PU : WH, 7 * s, clamp((p - .7) * 4)));
+}
+function drawBoard(x, y, s, p = 1, t = 0) {
+  // UNO R4 WiFi: 보드 + 와이파이 전파
+  const w = 300 * s, h = 210 * s, q = clamp(p * 3);
+  ctx.save(); ctx.globalAlpha *= q;
+  R(x - w / 2, y - h / 2, w, h, DK, { r: 16 * s }); R(x - w / 2, y - h / 2, w, h, WH, { r: 16 * s, lw: 5 });
+  R(x - 50 * s, y - 30 * s, 110 * s, 80 * s, '#2b2b2b', { r: 6 });
+  for (let i = 0; i < 9; i++) R(x - w / 2 + 26 * s + i * 28 * s, y - h / 2 + 14 * s, 14 * s, 14 * s, GR);
+  T('UNO R4 WiFi', x, y + 75 * s, 26 * s, WH, { face: S });
+  for (let k = 0; k < 3; k++) {
+    const a = clamp(Math.sin(t * 6 - k) * .5 + .5);
+    C(x + w / 2 - 30 * s, y - h / 2 - 10 * s, (20 + k * 22) * s, PU, { lw: 6 * s, a0: -Math.PI * .8, a1: -Math.PI * .2, alpha: .4 + .6 * a });
+  }
+  ctx.restore();
+}
+function key(x, y, s, col, rot = 0) {               // 열쇠 아이콘
+  group({ cx: x, cy: y, sc: s, rot }, () => {
+    C(x - 40, y, 28, col, { lw: 12 });
+    L([[x - 12, y], [x + 70, y]], col, 12, 1, { cap: 'butt' });
+    L([[x + 50, y], [x + 50, y + 24]], col, 12, 1, { cap: 'butt' });
+    L([[x + 68, y], [x + 68, y + 18]], col, 12, 1, { cap: 'butt' });
+  });
+}
+// 구글 시트 표: 활동지의 제목 행 그대로
+function sheet(x, y, w, rows, o = {}) {
+  const cols = [.5, .25, .25], hh = 58, rh = 54;
+  const cxOf = j => x + w * (cols.slice(0, j).reduce((a, b) => a + b, 0) + cols[j] / 2);
+  R(x, y, w, hh, PU, { r: 8 });
+  ['서버 수신 시각(KST)', '온도(℃)', '습도(%)'].forEach((s, j) => T(s, cxOf(j), y + hh / 2 + 2, 26, BK, { face: S }));
+  rows.forEach((r, i) => {
+    const ry = y + hh + i * rh, a = r.a ?? 1, hot = i === rows.length - 1 && o.hot;
+    R(x, ry, w, rh, hot ? '#1f0d2e' : '#101010', { alpha: a });
+    R(x, ry, w, rh, '#2c2c2c', { lw: 2, alpha: a });
+    r.v.forEach((s, j) => T(s, cxOf(j), ry + rh / 2 + 1, 26, hot ? WH : GR, { face: MONO, alpha: a }));
+  });
+}
+function check(x, y, s, p, col = PU) {              // ✓ 체크 표시 (그려지는 효과)
+  L([[x - 30 * s, y], [x - 8 * s, y + 24 * s], [x + 34 * s, y - 26 * s]], col, 12 * s, p, { glow: col });
+}
+function cross(x, y, s, p, col = PU) {              // ✕ 표시
+  L([[x - 28 * s, y - 28 * s], [x + 28 * s, y + 28 * s]], col, 13 * s, p * 2, { glow: col });
+  L([[x + 28 * s, y - 28 * s], [x - 28 * s, y + 28 * s]], col, 13 * s, p * 2 - 1, { glow: col });
+}
+function panel(x, y, w, h, title) {                 // 어두운 창 (시리얼 모니터 등)
+  R(x, y, w, h, '#0e0e0e', { r: 16 }); R(x, y, w, h, '#333', { r: 16, lw: 2 });
+  [0, 1, 2].forEach(i => C(x + 32 + i * 28, y + 32, 8, i === 0 ? PU : '#444'));
+  T(title, x + 130, y + 33, 24, GR, { face: S, align: 'left' });
+}
+
+// ================= 장면 (단위: 박) =================
+// [시작 박, 끝 박, HUD 라벨, 그리기 함수]
+const SC = [
+  [0, 4, '00 HOOK', sHook],
+  [4, 10, '01 역할 분담', sRelay],
+  [10, 16, '02 열쇠 3개', sKeys],
+  [16, 22, '03 웹 앱 시험', sWeb],
+  [22, 28, '04 1단계 · 직접 입력', sStep1],
+  [28, 34, '05 2단계 · 자동 기록', sStep2],
+  [34, 38, '06 주의 3', sWarn],
+  [38, 99, '', sOutro],
+];
+
+// ---------- 00 훅: 센서값이 / 구글 시트로 / 날아간다 ----------
+function sHook(b, t) {
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(-.32);
+  R(-1400, -90, 2800 * eoE(b / .35), 180, PU, { alpha: .14 });
+  ctx.restore();
+  pill('[IoT 첫걸음] 온습도 데이터 온라인 저장', 140, 140, 30, BK, PL, { outline: 1, sc: eoB((b - .3) / .4) });
+  const kp = 1 + .03 * kickE(t);
+  slam('센서값이', 140, 330, 190, WH, b, { align: 'left', sc: kp });
+  slam('구글 시트로', 140, 560, 190, PU, b - 1, { align: 'left', glow: PU, gb: 30, sc: kp });
+  // 날아간다: 오른쪽으로 쏠리며 잔상
+  if (b > 2) {
+    const f = b - 2, dx = f > 1.3 ? eiC((f - 1.3) / .7) * 1600 : 0;
+    for (let k = 3; k >= 1; k--) if (dx > 0) T('날아간다', 140 + dx - k * 90, 790, 190, PU, { align: 'left', alpha: .18 * (4 - k) / 3 });
+    slam('날아간다', 140 + dx, 790, 190, WH, f, { align: 'left', sc: kp });
+    for (let i = 0; i < 6; i++) {                     // 스피드 라인
+      const y = 720 + i * 26, x0 = 1000 + rnd(i) * 300;
+      L([[x0 + dx * .5, y], [x0 + 300 + dx, y]], i % 2 ? WH : PU, 4, clamp(f / .3), { alpha: .7 });
+    }
+  }
+  // 오른쪽: 센서 → 패킷 발사
+  drawDHT(1600, 360, 1.05, clamp(b / .6), { lit: i => (Math.floor(b * 4) + i) % 6 === 0 });
+  if (b > 2) {
+    const q = clamp((b - 2) / 1.6);
+    const x = lerp(1600, 2100, eiC(q)), y = lerp(560, 300, q);
+    R(x - 46, y - 22, 92, 44, PU, { r: 8, glow: PU });
+    T('26·61', x, y + 1, 22, BK, { face: MONO });
+  }
+}
+
+// ---------- 01 역할 분담: 4단계 릴레이 ----------
+const NODES = [[260, 'DHT11', '온습도 측정'], [720, 'UNO R4 WiFi', 'Wi-Fi로 전송'], [1180, 'Apps Script', '받아서 검사'], [1640, 'Google Sheet', '한 줄 기록']];
+function sRelay(b, t) {
+  slam('역할 분담', 140, 150, 96, WH, b, { align: 'left' });
+  T('4단계 릴레이', 600, 156, 40, PU, { face: S, align: 'left', reveal: (b - .3) / .4 });
+  const y = 480;
+  NODES.forEach(([x, name, role], i) => {
+    const f = b - .5 - i * .5;
+    if (i > 0) L([[NODES[i - 1][0] + 130, y], [x - 130, y]], GR, 4, (f + .3) / .4, { dash: [14, 12] });
+    if (f < 0) return;
+    group({ cx: x, cy: y, sc: eoB(f / .35) }, () => {
+      C(x, y, 140, DK); C(x, y, 140, i === 3 ? PU : '#3a3a3a', { lw: 4, glow: i === 3 ? PU : 0 });
+      if (i === 0) drawDHT(x, y - 14, .62, 1, { lit: c => (Math.floor(t * 8) + c) % 7 === 0 });
+      if (i === 1) drawBoard(x, y + 6, .62, 1, t);
+      if (i === 2) img('server', x, y, 150);
+      if (i === 3) img('db', x, y, 150, { glow: PU, gb: 30 });
+    });
+    T(name, x, y + 200, 44, WH, { reveal: f / .3 });
+    T(`${i + 1}. ${role}`, x, y + 252, 32, i === 3 ? PU : GR, { face: S, reveal: (f - .1) / .3 });
+  });
+  // 패킷: 반 박마다 출발 → 시트 도착
+  for (let k = 0; k < 6; k++) {
+    const q = (b - 2.5 - k * .5) / 1.6;
+    if (q <= 0 || q >= 1) continue;
+    const x = lerp(260, 1640, eio(q));
+    R(x - 52, y - 200, 104, 44, PU, { r: 8, glow: PU });
+    T('25·60', x, y - 177, 22, BK, { face: MONO });
+  }
+  T('센서 값 → Wi-Fi → 구글 서버 → 시트에 한 줄', W / 2, 900, 46, WH, { face: S, reveal: (b - 3) / .4 });
+}
+
+// ---------- 02 열쇠 3개: 시트 ID · 배포 ID · CLASS_KEY ----------
+function urlBar(y, pre, mid, post, f, hl, label, sub) {
+  if (f < 0) return;
+  const size = 40, x0 = 160;
+  const w1 = tw(pre, size, MONO), w2 = tw(mid, size, MONO), w3 = tw(post, size, MONO);
+  group({ x: (1 - eoE(f / .3)) * -80, alpha: clamp(f / .12) }, () => {
+    R(x0 - 30, y - 42, w1 + w2 + w3 + 60, 84, '#111', { r: 42 });
+    R(x0 - 30, y - 42, w1 + w2 + w3 + 60, 84, '#333', { r: 42, lw: 2 });
+    T(pre, x0, y, size, GR, { face: MONO, align: 'left' });
+    if (hl > 0) R(x0 + w1 - 4, y - 30, (w2 + 8) * eoE(hl / .3), 60, PU, { r: 6, glow: PU, gb: 20 });
+    T(mid, x0 + w1, y, size, hl > .15 ? BK : WH, { face: MONO, align: 'left' });
+    T(post, x0 + w1 + w2, y, size, GR, { face: MONO, align: 'left' });
+    T(label, x0 + w1 + w2 + w3 + 70, y - 14, 46, WH, { align: 'left', reveal: hl / .3 });
+    T(sub, x0 + w1 + w2 + w3 + 72, y + 34, 26, PL, { face: S, align: 'left', reveal: (hl - .1) / .3 });
+  });
+}
+function sKeys(b, t) {
+  slam('열쇠 3개', 140, 150, 96, WH, b, { align: 'left' });
+  [0, 1, 2].forEach(i => { const f = b - .2 - i * .15; if (f > 0) key(620 + i * 170, 150, .62 * eoB(f / .3), i === 2 ? PU : WH, -.3 + Math.sin(t * 3 + i) * .08); });
+  urlBar(340, '…/spreadsheets/d/', '■■시트ID■■', '/edit', b - .5, b - 1, '① 시트 ID', '→ Apps Script의 SHEET_ID');
+  urlBar(540, '…/macros/s/', '■■배포ID■■', '/exec', b - 2.2, b - 3, '② 배포 ID', '→ 아두이노의 DEPLOY_ID');
+  // CLASS_KEY: 두 코드에 똑같이
+  if (b > 4) {
+    const f = b - 4;
+    slam('③ CLASS_KEY', 160, 740, 64, PU, f, { align: 'left', face: MONO, glow: PU });
+    const box = (x, s1, s2, ff) => {
+      if (ff < 0) return;
+      group({ y: (1 - eoE(ff / .3)) * 60, alpha: clamp(ff / .12) }, () => {
+        R(x, 810, 640, 130, '#111', { r: 14 }); R(x, 810, 640, 130, '#333', { r: 14, lw: 2 });
+        T(s1, x + 30, 850, 26, GR, { face: S, align: 'left' });
+        T(s2, x + 30, 900, 32, WH, { face: MONO, align: 'left' });
+      });
+    };
+    box(160, 'Apps Script', 'CLASS_KEY = "abc123";', f - .3);
+    box(960, 'Arduino', 'CLASS_KEY[] = "abc123";', f - .6);
+    if (f > 1) { slam('=', 880, 875, 90, PU, f - 1, { glow: PU }); pill('대소문자까지 똑같이!', 1760, 740, 32, PU, BK, { align: 'right', sc: eoB((f - 1.1) / .3) }); }
+  }
+}
+
+// ---------- 03 웹 앱 시험: SAVED: 25,60 ----------
+function sWeb(b, t) {
+  slam('웹 앱 시험', 1780, 150, 96, WH, b, { align: 'right' });
+  T('브라우저 주소창으로 먼저 확인', 1780, 230, 34, GR, { face: S, align: 'right', reveal: (b - .3) / .4 });
+  // 노트북 벡터 + 화면 안 브라우저
+  const lin = eoE(b / .4);
+  const box = img('laptop', lerp(400, 560, lin), 560, 840, { glow: PU, gb: 50, alpha: lin });
+  if (box) {
+    const sx = box.x0 + box.w * 162 / 1280, sy = box.y0 + box.h * 61 / 909;
+    const sw = box.w * (1104 - 162) / 1280, sh = box.h * (617 - 61) / 909;
+    R(sx + 18, sy + 18, sw - 36, 54, '#e4e4e0', { r: 27 });
+    typeT('exec?key=나의키&temp=25&humi=60', sx + 44, sy + 46, 26, BK, (b - .5) / 2, { face: MONO, cursor: true });
+    if (b > 3) {                                       // 엔터 → 응답
+      const f = b - 3;
+      slam('SAVED: 25,60', sx + sw / 2, sy + sh / 2 + 40, 64, PU, f, { face: MONO, from: 2 });
+      T('브라우저 응답', sx + sw / 2, sy + sh / 2 + 110, 24, GR, { face: S, alpha: clamp(f * 4) });
+    }
+  }
+  // 오른쪽: 시트에 한 행 + 50% 게이지
+  if (b > 3.3) {
+    const f = b - 3.3;
+    group({ x: (1 - eoE(f / .3)) * 120, alpha: clamp(f / .12) }, () =>
+      sheet(1080, 340, 700, [{ v: ['2026-10-05 10:00:00', '25', '60'] }], { hot: 1 }));
+  }
+  if (b > 4) {
+    const f = b - 4, cx = 1430, cy = 720;
+    C(cx, cy, 130, '#262626', { lw: 22 });
+    C(cx, cy, 130, PU, { lw: 22, a0: -Math.PI / 2, a1: -Math.PI / 2 + Math.PI * eoE(f / .8), glow: PU, cap: 'butt' });
+    T(`${Math.round(50 * eoE(f / .8))}%`, cx, cy + 4, 80, WH, {});
+    slam('여기까지 오면 50% 성공!', cx, 920, 52, WH, b - 5, { from: 1.6 });
+  }
+}
+
+// ---------- 04 1단계: 시리얼 모니터로 직접 입력 ----------
+function sStep1(b, t) {
+  pill('1단계', 140, 150, 40, PU, BK, { sc: eoB(b / .3) });
+  slam('시리얼 모니터로 직접 입력', 300, 152, 72, WH, b - .2, { align: 'left', from: 1.6 });
+  const px = 140, py = 260, pw = 760, ph = 680;
+  group({ x: (1 - eoE(b / .4)) * -150, alpha: clamp(b / .15) }, () => {
+    panel(px, py, pw, ph, '시리얼 모니터 · 9600 · 새 줄');
+    R(px + 24, py + 70, pw - 48, 70, '#1a1a1a', { r: 10 });
+    const cur = [['26,61', 0], ['27,62', 2], ['abc,60', 4]].filter(x => b >= x[1]).pop();
+    if (cur && b - cur[1] < 1) typeT(cur[0], px + 50, py + 105, 38, WH, (b - cur[1]) / .6, { face: MONO, cursor: true });
+    const log = [];
+    if (b > 1) log.push(['> 26,61', WH], ['Sending: 26,61', GR]);
+    if (b > 3) log.push(['> 27,62', WH], ['Sending: 27,62', GR]);
+    if (b > 5) log.push(['> abc,60', WH], ['Invalid input. Use integers', PU]);
+    log.forEach(([s, c], i) => T(s, px + 40, py + 190 + i * 56, 30, c, { face: MONO, align: 'left' }));
+  });
+  // 오른쪽 시트
+  const rows = [];
+  if (b > 1.2) rows.push({ v: ['…10:01:12', '26', '61'], a: clamp((b - 1.2) / .2) });
+  if (b > 3.2) rows.push({ v: ['…10:01:20', '27', '62'], a: clamp((b - 3.2) / .2) });
+  if (b > .6) group({ alpha: clamp((b - .6) / .3) }, () => sheet(1000, 300, 760, rows, { hot: 1 }));
+  if (b > 1.2) check(1830, 386, .75, (b - 1.2) / .3);
+  if (b > 3.2) check(1830, 440, .75, (b - 3.2) / .3);
+  // abc,60 → 거부
+  if (b > 5) {
+    const f = b - 5;
+    group({ x: Math.sin(f * 60) * 14 * clamp(1 - f * 2) }, () => {
+      cross(1390, 690, 2.2 * eoB(f / .3), f / .3);
+      slam('INVALID', 1390, 820, 96, PU, f, { face: MONO, glow: PU });
+      T('숫자가 아니면 저장 안 됨', 1390, 905, 36, WH, { face: S, reveal: (f - .2) / .3 });
+    });
+  }
+}
+
+// ---------- 05 2단계: DHT11 자동 기록 ----------
+function sStep2(b, t) {
+  pill('2단계', 140, 150, 40, PU, BK, { sc: eoB(b / .3) });
+  slam('DHT11 자동 기록', 300, 152, 72, WH, b - .2, { align: 'left', from: 1.6 });
+  drawDHT(330, 520, 1.35, clamp(b / .6), { lit: i => (Math.floor(b * 4) + i) % 5 === 0 });
+  pill('DHT11 dht11(4);', 330, 820, 30, BK, PL, { align: 'center', outline: 1, face: MONO, sc: eoB((b - .5) / .3) });
+  pill('INTERVAL = 5000', 330, 890, 30, BK, PL, { align: 'center', outline: 1, face: MONO, sc: eoB((b - .8) / .3) });
+  // 5초 타이머 링 (1.5박에 한 바퀴로 압축한 타임랩스)
+  const cx = 860, cy = 540, cyc = 1.5;
+  if (b > .4) {
+    const lp = b > .5 ? ((b - .5) % cyc) / cyc : 0;
+    C(cx, cy, 150, '#262626', { lw: 18 });
+    C(cx, cy, 150, PU, { lw: 18, a0: -Math.PI / 2, a1: -Math.PI / 2 + Math.PI * 2 * lp, glow: PU, cap: 'butt' });
+    T('5초', cx, cy - 6, 90, WH, {});
+    T('⏩ 타임랩스', cx, cy + 70, 26, GR, { face: S });
+  }
+  // 한 바퀴 돌 때마다 패킷 출발 → 시트 행 추가
+  const times = ['10:05:00', '10:05:05', '10:05:10'], vals = [['24', '58'], ['24', '59'], ['25', '59']];
+  const rows = [];
+  for (let k = 0; k < 3; k++) {
+    const go = .5 + cyc * (k + 1) - .9, q = (b - go) / .6;
+    if (q > 0 && q < 1) {
+      const x = lerp(cx + 170, 1100, eio(q));
+      R(x - 50, cy - 22, 100, 44, PU, { r: 8, glow: PU });
+      T(vals[k].join('·'), x, cy + 1, 22, BK, { face: MONO });
+    }
+    if (q >= 1) rows.push({ v: ['…' + times[k], vals[k][0], vals[k][1]], a: clamp((q - 1) * 3) });
+  }
+  if (b > .5) group({ alpha: clamp((b - .5) / .3) }, () => sheet(1120, 360, 660, rows, { hot: 1 }));
+  if (b > 5) {
+    slam('3회 이상 저장 ✓', 1450, 820, 70, PU, b - 5, { glow: PU, from: 1.8 });
+    T('읽기 실패한 값은 보내지 않음', 1450, 900, 32, GR, { face: S, reveal: (b - 5.2) / .3 });
+  }
+}
+
+// ---------- 06 주의 3 ----------
+function sWarn(b, t) {
+  slam('주의 3', 140, 150, 96, PU, b, { align: 'left', glow: PU });
+  const cards = [
+    ['PASSWORD', '= Wi-Fi 비밀번호', '구글 계정 비번 ✕', 0],
+    ['DENIED', '→ CLASS_KEY 확인', '대소문자까지 똑같이', .8],
+    ['HTTP 302·200', '≠ 저장 성공', '시트의 새 행으로 확인', 1.6],
+  ];
+  cards.forEach(([h, m, s, at], i) => {
+    const f = b - .3 - at;
+    if (f < 0) return;
+    const x = 140 + i * 570;
+    group({ cx: x + 260, cy: 580, sc: lerp(1.5, 1, eoE(f / .25)), rot: (i - 1) * .1 * (1 - eoE(f / .4)), alpha: clamp(f / .08) }, () => {
+      R(x, 340, 520, 480, i === 2 ? PU : DK, { r: 22 });
+      R(x, 340, 520, 480, i === 2 ? PU : WH, { r: 22, lw: 4 });
+      T(String(i + 1), x + 60, 410, 60, i === 2 ? BK : PU, {});
+      T(h, x + 40, 530, h.length > 9 ? 52 : 64, i === 2 ? BK : WH, { face: MONO, align: 'left' });
+      T(m, x + 40, 620, 44, i === 2 ? BK : PL, { align: 'left' });
+      T(s, x + 40, 740, 32, i === 2 ? BK : GR, { face: S, align: 'left' });
+    });
+  });
+}
+
+// ---------- 07 엔딩: 정적 → made by yangphago ----------
+function sOutro(b, t) {
+  if (b < 2) {                                         // 2박 정적: 선이 중심으로 모여듦
+    const g = clamp(b / 2);
+    for (let i = 0; i < 40; i++) {
+      const a = rnd(i) * Math.PI * 2, r0 = lerp(950, 40, eiC(clamp(g + rnd(i + 3) * .15))), len = 80 + rnd(i + 7) * 200;
+      L([[W / 2 + Math.cos(a) * r0, 540 + Math.sin(a) * r0], [W / 2 + Math.cos(a) * (r0 + len), 540 + Math.sin(a) * (r0 + len)]], i % 4 ? PU : WH, 3, 1, { alpha: g });
+    }
+    C(W / 2, 540, 6 + 26 * eiC(g), WH, { glow: PU, gb: 50 });
+    return;
+  }
+  const f = b - 2, fin = b - 6;                        // f=0: 임팩트, fin=0: 마지막 한 방
+  group({ alpha: 1 - clamp((b - 6.35) / .6) }, () => {
+    P(W / 2, 540, 620 + 30 * kickE(t), 3, t * .15, PU, { lw: 3, alpha: .25 });
+    P(W / 2, 540, 480, 4, -t * .2, WH, { lw: 2, alpha: .12 });
+    burst(W / 2, 540, f, 77, 34, 1000);
+    rings(W / 2, 540, f, WH, 1200);
+    if (fin > 0) { burst(W / 2, 540, fin, 133, 40, 1400); rings(W / 2, 540, fin, PU, 1400); }
+    const pump = 1 + .035 * kickE(t) + (fin > 0 ? .12 * Math.exp(-fin * 3) : 0);
+    group({ cx: W / 2, cy: 540, sc: pump }, () => {
+      slam('made by', W / 2, 370, 96, WH, f, { face: S, ls: 34, from: 3 });
+      const word = 'yangphago', size = 290, full = tw(word, size, D, 6);
+      let x = W / 2 - full / 2;
+      Array.from(word).forEach((c, i) => {
+        const cw = tw(c, size, D, 6), g = f - .25 - i * .25;
+        if (g >= 0) T(c, x + cw / 2, 590 - (1 - eoB(g / .3)) * 260, size, PU, { sy: lerp(1.4, 1, eoE(g / .4)), alpha: clamp(g / .05), glow: PU, gb: 30 + 40 * kickE(t) + (fin > 0 ? 80 * Math.exp(-fin * 2) : 0) });
+        x += cw;
+      });
+      R(W / 2 - full / 2, 760, full * eoE((f - 2.6) / .5), 12, WH);
+      T('IoT 첫걸음  ·  온습도 데이터 온라인 저장', W / 2, 830, 34, GR, { face: S, ls: 6, reveal: (f - 3) / .4 });
+    });
+  });
+}
+
+// ================= 전환 · 후처리 =================
+const WIPES = { 4: 2, 10: 0, 16: 1, 22: 2, 28: 0, 34: 1 };    // 장면 시작 박 → 전환 종류
+function wipe(t) {
+  for (const [beat, kind] of Object.entries(WIPES)) {
+    const p = (t - beat * BT) / .34 + .5;
+    if (p <= 0 || p >= 1) continue;
+    const a = p < .5 ? eio(p * 2) : 1 - eio((p - .5) * 2);
+    if (kind === 0) {                                // 보라 커튼
+      if (p < .5) R(0, 0, W * a, H, PU); else R(W * (1 - a), 0, W * a, H, PU);
+    } else if (kind === 1) {                         // 셔터 8칸
+      for (let i = 0; i < 8; i++) R(i * W / 8, 0, W / 8 + 1, H * clamp(a * 1.4 - i * .05), i % 2 ? WH : PU);
+    } else {                                         // 사선 슬래시
+      ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(-.35);
+      R(-1400, -800, 2800, 1600 * a, PU); R(-1400, 800 - 800 * a, 2800, 800 * a, BK);
+      ctx.restore();
+    }
+  }
+}
+function glitch(seed, amt) {
+  for (let i = 0; i < 9; i++) {
+    const y = rnd(seed + i) * H, h = 8 + rnd(seed + i + 9) * 90, dx = (rnd(seed + i + 20) - .5) * amt * 2;
+    ctx.drawImage(cv, 0, y, W, h, dx, y, W, h);
+  }
+}
+const grains = [], dots = document.createElement('canvas'), vig = document.createElement('canvas');
+(function prep() {
+  for (let k = 0; k < 6; k++) {
+    const g = document.createElement('canvas'); g.width = 640; g.height = 360;
+    const gx = g.getContext('2d'), im = gx.createImageData(640, 360);
+    for (let i = 0; i < im.data.length; i += 4) { const v = Math.random() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+    gx.putImageData(im, 0, 0); grains.push(g);
+  }
+  dots.width = W; dots.height = H;
+  const dx = dots.getContext('2d'); dx.fillStyle = '#ffffff';
+  for (let y = 30; y < H; y += 60) for (let x = 30; x < W; x += 60) { dx.beginPath(); dx.arc(x, y, 1.6, 0, 7); dx.fill(); }
+  vig.width = W; vig.height = H;
+  const vx = vig.getContext('2d'), gr = vx.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * 1.05);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.75)');
+  vx.fillStyle = gr; vx.fillRect(0, 0, W, H);
+})();
+function hud(t, label, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a;
+  const m = 44, c = 34;
+  [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]].forEach(([x, y, sx, sy]) =>
+    L([[x, y + sy * c], [x, y], [x + sx * c, y]], GR, 3, 1, { cap: 'square' }));
+  T('IoT 첫걸음  /  온습도 데이터 온라인 저장', 96, 62, 20, GR, { face: S, align: 'left', ls: 2 });
+  C(W - 230, 62, 7, PU, { alpha: .4 + .6 * kickE(t), glow: PU, gb: 12 });
+  T('BPM 90  ·  REC', W - 96, 63, 20, GR, { face: S, align: 'right', ls: 2 });
+  if (label) { R(96, H - 70, 14, 14, PU); T(label, 122, H - 62, 22, WH, { face: S, align: 'left', ls: 2 }); }
+  T(`${t.toFixed(2).padStart(5, '0')}s / 30s`, W - 96, H - 62, 20, GR, { face: MONO, align: 'right' });
+  R(0, H - 6, W * t / DUR, 6, PU, { glow: PU, gb: 10 });
+  ctx.restore();
+}
+
+// ================= 메인 렌더 =================
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = BK; ctx.fillRect(0, 0, W, H);
+  const bt = t / BT;
+  const sc = SC.find(s => bt < s[1]) || SC[SC.length - 1];
+  const lb = bt - sc[0];
+  ctx.globalAlpha = .07 + .08 * kickE(t); ctx.drawImage(dots, 0, 0); ctx.globalAlpha = 1;
+  // 카메라: 스네어 흔들림 + 킥 줌 + 임팩트 강타
+  const si = lastIdx(BM.snares, t), shake = 7 * snE(t) + 28 * impE(t);
+  const zx = (rnd(si * 3.1) - .5) * shake, zy = (rnd(si * 7.7) - .5) * shake, z = 1 + .012 * kickE(t) + .04 * impE(t);
+  ctx.save();
+  ctx.translate(W / 2 + zx, H / 2 + zy); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+  sc[3](lb, t);
+  ctx.restore();
+  wipe(t);
+  // 플래시: 시작 드롭 + 임팩트
+  let fl = .85 * Math.exp(-t / .12);
+  for (const x of BM.impacts) if (t >= x) fl = Math.max(fl, Math.exp(-(t - x) / .16));
+  if (fl > .01) { ctx.fillStyle = WH; ctx.globalAlpha = fl; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  // 글리치 · 엔딩 스트로브
+  const sinceSn = since(BM.snares, t), outro = t >= BM.impacts[0];
+  if (sinceSn < .1 && (outro || (bt >= 34 && bt < 38))) glitch(si * 13, 40 * (1 - sinceSn / .1));
+  if (impE(t) > .2) glitch(lastIdx(BM.impacts, t) * 31 + Math.floor(t * 30), 90 * impE(t));
+  if (outro && t < BM.impacts[1] && sinceSn < .05) {
+    ctx.globalCompositeOperation = 'difference'; ctx.fillStyle = WH; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.drawImage(vig, 0, 0);
+  ctx.globalAlpha = .07; ctx.globalCompositeOperation = 'overlay';
+  ctx.drawImage(grains[Math.floor(t * 30) % 6], 0, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  hud(t, sc[2], clamp((t - .3) / .4) * (1 - clamp((t - BM.gap[0]) / .2)));
+}
+
+// ================= 미리보기 재생 =================
+window.fontsReady = Promise.all([document.fonts.load('100px KRD'), document.fonts.load('100px KRS'), imgReady]);
+const au = document.getElementById('au'), hint = document.getElementById('hint');
+const q0 = parseFloat(new URLSearchParams(location.search).get('t') || '0');
+fontsReady.then(() => render(q0));
+au.addEventListener('loadedmetadata', () => { au.currentTime = q0; });   // ?t=초 로 시작 위치 지정
+// 간이 서버는 구간 요청을 지원하지 않아 탐색이 안 됨 → 음원을 메모리에 받아서 재생
+fetch(au.src).then(r => r.blob()).then(b => { au.src = URL.createObjectURL(b); }).catch(() => {});
+cv.onclick = () => { if (au.paused) { au.play(); hint.style.display = 'none'; } else au.pause(); };
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') au.currentTime = Math.min(DUR, au.currentTime + 5);
+  if (e.key === 'ArrowLeft') au.currentTime = Math.max(0, au.currentTime - 5);
+  if (e.key === ' ') cv.onclick();
+});
+(function loop() { if (!au.paused) render(au.currentTime); requestAnimationFrame(loop); })();
+</script>
