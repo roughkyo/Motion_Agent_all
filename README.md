@@ -58,4 +58,4 @@ skills/yangphago-motion/
 ```
 
 ## 만든 사람
-양파고 (Yang Phago) — 고등학교 AI·정보 교사
+양파고 (Yang Phago)
