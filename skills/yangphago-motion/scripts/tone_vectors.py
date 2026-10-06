@@ -23,7 +23,7 @@ def hex_rgb(h):
 
 def palette_stops(path):
     # storyboard.json의 palette로 그라데이션 3색을 만든다 (palette가 없으면 기본값)
-    pal = json.loads(Path(path).read_text(encoding='utf-8')).get('palette')
+    pal = json.loads(Path(path).read_text(encoding='utf-8-sig')).get('palette')
     if not pal:
         print('palette 없음 → 기본 색감 사용')
         return DEFAULT_STOPS

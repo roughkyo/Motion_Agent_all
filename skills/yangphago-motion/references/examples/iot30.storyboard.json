@@ -1,0 +1,82 @@
+{
+ "title": "IoT 첫걸음 · 온습도 데이터 온라인 저장",
+ "style": "B 정보형 키네틱 (v2)",
+ "outro": "made by yangphago",
+ "outro_sub": "IoT 첫걸음  ·  온습도 데이터 온라인 저장",
+ "fx": {"hud": "IoT 첫걸음  /  온습도 데이터 온라인 저장"},
+ "music": [{"id": "m1", "label": "Urban Hip Hop Beat — 331music", "src": "music/final.wav", "bpm": 90, "note": "올드스쿨 붐뱁, 밝고 단단함", "contentId": false, "recommended": true, "source": "라이브러리"}],
+ "scenes": [
+  {"title": "HOOK", "label": "00 HOOK", "desc": "세 줄이 박마다 쾅 · 마지막 줄은 잔상 남기며 날아감 · 센서에서 데이터 칩 발사", "beats": 4,
+   "items": [
+    {"fn": "band", "x": 960, "y": 540},
+    {"fn": "pill", "text": "[IoT 첫걸음] 온습도 데이터 온라인 저장", "x": 140, "y": 140, "size": 30, "style": "outline", "align": "left", "at": 0.3},
+    {"fn": "stack", "x": 140, "y": 560, "size": 190, "lines": [["센서값이"], ["구글 시트로", "pu"], ["날아간다"]], "fly": 2, "flyAt": 1.3},
+    {"fn": "icon", "name": "sensor", "x": 1600, "y": 380, "size": 320, "style": "plain"},
+    {"fn": "packet", "text": "26·61", "x": 1600, "y": 560, "to": [2100, 300], "n": 1, "d": 1.6, "at": 2}
+   ]},
+  {"title": "역할 분담", "label": "01 역할 분담", "desc": "4단계 노드가 반 박마다 튀어나오고 데이터 칩이 릴레이", "beats": 6,
+   "head": {"text": "역할 분담", "sub": "4단계 릴레이"},
+   "items": [
+    {"fn": "flow", "y": 480, "nodes": [
+      {"icon": "sensor", "label": "DHT11", "sub": "온습도 측정"},
+      {"icon": "board", "label": "UNO R4 WiFi", "sub": "Wi-Fi로 전송"},
+      {"icon": "cloud", "label": "Apps Script", "sub": "받아서 검사"},
+      {"icon": "database", "label": "Google Sheet", "sub": "한 줄 기록"}],
+     "packet": {"text": "25·60", "at": 2.5, "every": 0.5, "n": 6, "d": 1.6}},
+    {"fn": "reveal", "text": "센서 값 → Wi-Fi → 구글 서버 → 시트에 한 줄", "y": 900, "size": 46, "font": "S", "at": 3}
+   ]},
+  {"title": "열쇠 3개", "label": "02 열쇠 3개", "desc": "주소창 조각 하이라이트 → 두 코드에 같은 CLASS_KEY", "beats": 6,
+   "head": {"text": "열쇠 3개"},
+   "items": [
+    {"fn": "icons", "x": 790, "y": 150, "gap": 170, "size": 96, "style": "plain", "step": 0.15, "at": 0.2, "items": [{"icon": "key"}, {"icon": "key"}, {"icon": "key", "hot": true}]},
+    {"fn": "urlbar", "y": 340, "pre": "…/spreadsheets/d/", "mid": "■■시트ID■■", "post": "/edit", "label": "① 시트 ID", "sub": "→ Apps Script의 SHEET_ID", "at": 0.5, "hl": 0.5},
+    {"fn": "urlbar", "y": 540, "pre": "…/macros/s/", "mid": "■■배포ID■■", "post": "/exec", "label": "② 배포 ID", "sub": "→ 아두이노의 DEPLOY_ID", "at": 2.2, "hl": 0.8},
+    {"fn": "slam", "text": "③ CLASS_KEY", "x": 160, "y": 740, "size": 64, "color": "pu", "font": "M", "align": "left", "at": 4},
+    {"fn": "codebox", "label": "Apps Script", "code": "CLASS_KEY = \"abc123\";", "x": 480, "y": 875, "at": 4.3},
+    {"fn": "codebox", "label": "Arduino", "code": "CLASS_KEY[] = \"abc123\";", "x": 1280, "y": 875, "at": 4.6},
+    {"fn": "slam", "text": "=", "x": 880, "y": 875, "size": 90, "color": "pu", "at": 5},
+    {"fn": "pill", "text": "대소문자까지 똑같이!", "x": 1760, "y": 740, "size": 32, "align": "right", "at": 5.1}
+   ]},
+  {"title": "웹 앱 시험", "label": "03 웹 앱 시험", "desc": "노트북 주소창 타이핑 → SAVED 쾅 → 시트 한 행 → 50% 게이지", "beats": 6,
+   "head": {"text": "웹 앱 시험", "sub": "브라우저 주소창으로 먼저 확인", "align": "right"},
+   "items": [
+    {"fn": "device", "device": "laptop", "x": 560, "y": 560, "w": 820, "url": "exec?key=나의키&temp=25&humi=60", "result": "SAVED: 25,60", "resultSub": "브라우저 응답", "resultAt": 3},
+    {"fn": "table", "x": 1430, "top": 340, "w": 700, "cols": [0.5, 0.25, 0.25], "head": ["서버 수신 시각(KST)", "온도(℃)", "습도(%)"], "rows": [{"v": ["2026-10-05 10:00:00", "25", "60"]}], "at": 3.3},
+    {"fn": "gauge", "x": 1430, "y": 720, "value": 50, "r": 130, "at": 4},
+    {"fn": "slam", "text": "여기까지 오면 50% 성공!", "x": 1430, "y": 920, "size": 52, "o": {"from": 1.6}, "at": 5}
+   ]},
+  {"title": "1단계", "label": "04 1단계 · 직접 입력", "desc": "시리얼 모니터 입력 → 시트 행 + 체크 → abc 입력은 INVALID", "beats": 6,
+   "head": {"tag": "1단계", "text": "시리얼 모니터로 직접 입력"},
+   "items": [
+    {"fn": "terminal", "x": 520, "y": 600, "w": 760, "h": 680, "title": "시리얼 모니터 · 9600 · 새 줄",
+     "input": [["26,61", 0], ["27,62", 2], ["abc,60", 4]],
+     "lines": [["> 26,61", 1], ["Sending: 26,61", 1, "gr"], ["> 27,62", 3], ["Sending: 27,62", 3, "gr"], ["> abc,60", 5], ["Invalid input. Use integers", 5, "pu"]]},
+    {"fn": "table", "x": 1380, "top": 300, "w": 760, "cols": [0.5, 0.25, 0.25], "head": ["서버 수신 시각(KST)", "온도(℃)", "습도(%)"], "check": true,
+     "rows": [{"v": ["…10:01:12", "26", "61"], "at": 0.6}, {"v": ["…10:01:20", "27", "62"], "at": 2.6}], "at": 0.6},
+    {"fn": "cross", "x": 1390, "y": 690, "size": 130, "text": "INVALID", "sub": "숫자가 아니면 저장 안 됨", "at": 5}
+   ]},
+  {"title": "2단계", "label": "05 2단계 · 자동 기록", "desc": "센서 + 5초 타이머가 돌 때마다 칩이 날아가 시트 행 추가", "beats": 6,
+   "head": {"tag": "2단계", "text": "DHT11 자동 기록"},
+   "items": [
+    {"fn": "icon", "name": "sensor", "x": 330, "y": 500, "size": 330, "style": "plain"},
+    {"fn": "pill", "text": "DHT11 dht11(4);", "x": 330, "y": 820, "size": 30, "style": "outline", "font": "M", "at": 0.5},
+    {"fn": "pill", "text": "INTERVAL = 5000", "x": 330, "y": 890, "size": 30, "style": "outline", "font": "M", "at": 0.8},
+    {"fn": "gauge", "x": 860, "y": 540, "r": 150, "lw": 18, "loop": 1.5, "text": "5초", "label": "⏩ 타임랩스", "size": 90, "at": 0.4},
+    {"fn": "packet", "text": "24·58", "x": 1030, "y": 540, "to": [1120, 540], "n": 1, "d": 0.6, "at": 1.1},
+    {"fn": "packet", "text": "24·59", "x": 1030, "y": 540, "to": [1120, 540], "n": 1, "d": 0.6, "at": 2.6},
+    {"fn": "packet", "text": "25·59", "x": 1030, "y": 540, "to": [1120, 540], "n": 1, "d": 0.6, "at": 4.1},
+    {"fn": "table", "x": 1450, "top": 360, "w": 660, "cols": [0.5, 0.25, 0.25], "head": ["서버 수신 시각(KST)", "온도(℃)", "습도(%)"],
+     "rows": [{"v": ["…10:05:00", "24", "58"], "at": 1.2}, {"v": ["…10:05:05", "24", "59"], "at": 2.7}, {"v": ["…10:05:10", "25", "59"], "at": 4.2}], "at": 0.5},
+    {"fn": "slam", "text": "3회 이상 저장 ✓", "x": 1450, "y": 820, "size": 70, "color": "pu", "o": {"from": 1.8}, "at": 5},
+    {"fn": "reveal", "text": "읽기 실패한 값은 보내지 않음", "x": 1450, "y": 900, "size": 32, "font": "S", "color": "gr", "at": 5.2}
+   ]},
+  {"title": "주의 3", "label": "06 주의 3", "desc": "경고 카드 3장이 0.8박마다 내려앉음 · 스네어마다 글리치", "beats": 4, "glitch": true,
+   "head": {"text": "주의 3", "color": "pu"},
+   "items": [
+    {"fn": "cards", "y": 580, "font": "M", "cards": [
+      {"head": "PASSWORD", "body": "= Wi-Fi 비밀번호", "sub": "구글 계정 비번 ✕"},
+      {"head": "DENIED", "body": "→ CLASS_KEY 확인", "sub": "대소문자까지 똑같이"},
+      {"head": "HTTP 302·200", "body": "≠ 저장 성공", "sub": "시트의 새 행으로 확인"}]}
+   ]}
+ ]
+}

@@ -15,6 +15,16 @@
 | 미리보기에서 음악 탐색(seek) 불가 | python http.server가 Range 미지원 | 음원을 `fetch → blob URL`로 재생 (템플릿·스토리보드에 반영됨) |
 | 미리보기 포트 충돌 | 다른 대화가 8765 사용 | launch.json에 다른 포트(8766~) 사용 |
 
+## v2 정보형 (2026-10-06 추가)
+| 증상 | 원인 | 해결 |
+|---|---|---|
+| 결과가 텍스트 위주·정적 | 장면에 텍스트 부품만 씀 (v1 테슬라 15초: 요소 2개·정지 76%) | 키워드→비주얼 비유 표로 부품 먼저 고르기. make_storyboard 역동성 검사 ⚠ 0개 + motion_metrics 통과 확인 |
+| 아이콘이 점으로 나옴 | 없는 아이콘 이름 | make_storyboard ⚠ 목록에서 고르기 (components.md 77종) |
+| 머리글과 본문이 겹침 | 본문을 y 250 위에 둠 | 머리글 있는 장면은 본문 y 300~960 |
+| 노드 라벨이 겹침 | flow 노드 5개 이상 + 긴 라벨 | 노드 4개 이하, 라벨 12자 이하, 또는 x0·x1 넓힘 |
+| json 수정이 안 먹음 | 작업 폴더 motion.html이 v1 복사본 | `cp "$SK/scripts/motion_template.html" motion.html` 후 재실행 |
+| 이미지(img)가 안 보임 | assets 경로가 작업 폴더 기준이 아님 | `"assets": {"키": "assets/파일_duo.png"}` — motion.html 기준 상대경로 (make_storyboard가 ⚠) |
+
 ## 박자 분석
 | 증상 | 원인 | 해결 |
 |---|---|---|

@@ -25,7 +25,7 @@ def main():
     path = Path(".claude/launch.json")
     data = {"version": "0.0.1", "configurations": []}
     if path.exists():
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
 
     # 같은 이름의 기존 설정은 빼고 새 설정을 넣는다 (다른 설정은 보존)
     configs = []

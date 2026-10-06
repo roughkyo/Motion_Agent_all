@@ -1,7 +1,7 @@
 # 붐뱁 힙합 비트 자작 생성기 (외부 샘플 0개 → 저작권 100% 자작)
 # 실행: python synth_beat.py --seconds 30 [--bpm 90] [--mood boombap|japan] [--tapestop 마디] [--out music/beat.wav] [--map beatmap.js]
 #   --mood japan: 미야코부시 음계(D·Eb·G·A·Bb) 코드 + 코토(현 튕김) 리드 + 타이코 북 (일본 주제용)
-#   영상 길이(초)에 맞춰 마디 수를 정하고, 끝 2마디는 '정적 → made by 임팩트 → 마지막 한 방' 구조로 고정
+#   영상 길이(초)에 맞춰 마디 수를 정하고, 끝은 '2박 정적 → made by 임팩트 → 1마디 뒤 마지막 한 방' (arrange.py와 같은 박 구조)
 import sys
 import argparse
 import json
@@ -23,9 +23,10 @@ BPM = args.bpm
 BEAT = 60 / BPM          # 한 박 = 0.6667초
 STEP = BEAT / 4          # 16분음표
 BAR = BEAT * 4
-TAIL0 = 2.0                                       # 마지막 한 방 뒤 잔향
-BARS = max(6, int(round((args.seconds - TAIL0) / (240 / BPM))))   # 마지막 한 방은 BARS마디 첫 박
-OUTRO = BARS - 2                                  # made by 임팩트 마디 (그 직전 2박은 정적)
+# arrange.py와 같은 구조: 마지막 한 방 = 끝에서 0.6초 이상 남긴 마디 경계, 임팩트는 그 1마디 전, 정적은 임팩트 직전 2박
+# (30초·90BPM → 본문 38박 · 정적 25.33s · 임팩트 26.67s · 마지막 한 방 29.33s)
+BARS = max(4, int((args.seconds - 0.6) // BAR))   # 마지막 한 방은 BARS마디 첫 박
+OUTRO = BARS - 1                                  # made by 임팩트 마디 (그 직전 2박은 정적)
 LEAD_FROM = BARS // 2                             # 리드 벨 시작 마디
 TAIL = args.seconds - BARS * 240 / BPM
 N = int((BARS * BAR + TAIL) * SR)
@@ -338,10 +339,10 @@ if TS > 0:
     for c in range(2):
         mix[i0:i1, c] = np.interp(pos, np.arange(N), mix[:, c]) * (1 - tau ** 3)
 
-# 마스터: 소프트 클립 + 노멀라이즈 + 끝부분 페이드아웃
+# 마스터: 소프트 클립 + 노멀라이즈 + 마지막 한 방 뒤 잔향만 페이드아웃
 mix /= np.max(np.abs(mix))
 mix = np.tanh(1.4 * mix) / np.tanh(1.4)
-fade = int(1.5 * SR)
+fade = max(1, N - int((END + 0.12) * SR))
 mix[-fade:] *= np.linspace(1, 0, fade)[:, None] ** 2
 mix *= 0.93 / np.max(np.abs(mix))
 wavfile.write(args.out, SR, (mix * 32767).astype(np.int16))

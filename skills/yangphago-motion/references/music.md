@@ -55,7 +55,8 @@ clean
 
 ## ③ Python 합성
 `python scripts/synth_beat.py --seconds 30 [--bpm 90] [--tapestop 마디] --out music/final.wav --map beatmap.js`
-- 마디 수 = round((초−2)/(240/BPM)), 8마디마다 필, 중간부터 리드, 엔딩 2박 정적(gap) → 임팩트 → 2마디 뒤 마지막 한 방
+- arrange.py와 같은 박 구조: 마지막 한 방 = 끝에서 0.6초 이상 남긴 마디 경계, 임팩트는 그 1마디 전, 정적(gap)은 임팩트 직전 2박 (30초·90BPM 본문 38박)
+- 8마디마다 필, 중간부터 리드
 - beatmap에 kicks·snares·impacts·gap이 정확히 들어감 → 편곡 없이 바로 템플릿 사용
 - 미리듣기 후보로도 올릴 수 있음 (예: 85/90/95 BPM 세 가지를 candidates/에 생성)
 

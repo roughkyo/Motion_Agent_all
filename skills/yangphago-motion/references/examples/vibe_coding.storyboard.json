@@ -1,0 +1,516 @@
+{
+ "title": "바이브 코딩 첫걸음",
+ "style": "B 정보형 키네틱 (v2) · 코딩 팔레트",
+ "fonts": {
+  "title": "P9",
+  "body": "P6"
+ },
+ "palette": {
+  "bg": "#0D1117",
+  "main": "#E6EDF3",
+  "accent": "#3FB950",
+  "sub": "#58A6FF"
+ },
+ "outro": "made by yangphago",
+ "outro_sub": "바이브 코딩 첫걸음  ·  말로 만드는 프로그램",
+ "fx": {
+  "hud": "VIBE CODING  /  말로 만드는 프로그램"
+ },
+ "music": [
+  {
+   "id": "m1",
+   "label": "yangphago Boom Bap (자체 합성)",
+   "src": "music/final.wav",
+   "bpm": 90,
+   "note": "묵직한 붐뱁",
+   "contentId": false,
+   "recommended": true,
+   "source": "라이브러리"
+  }
+ ],
+ "scenes": [
+  {
+   "title": "HOOK",
+   "beats": 4,
+   "desc": "거대 외곽선 글자가 흐르는 위로 세 줄 쾅 · 마지막 줄 날아감 · AI 아이콘에서 코드 칩 발사",
+   "items": [
+    {
+     "fn": "marquee",
+     "text": "VIBE CODING",
+     "y": 860,
+     "size": 260,
+     "o": {
+      "alpha": 0.08
+     }
+    },
+    {
+     "fn": "band",
+     "angle": -0.28,
+     "h": 200
+    },
+    {
+     "fn": "stack",
+     "x": 140,
+     "y": 520,
+     "size": 180,
+     "lines": [
+      [
+       "말로 하면"
+      ],
+      [
+       "코드가",
+       "pu"
+      ],
+      [
+       "된다"
+      ]
+     ],
+     "fly": 2
+    },
+    {
+     "fn": "icon",
+     "name": "ai",
+     "x": 1560,
+     "y": 420,
+     "size": 300,
+     "style": "plain"
+    },
+    {
+     "fn": "rings",
+     "x": 1560,
+     "y": 420,
+     "r": 520,
+     "at": 1
+    },
+    {
+     "fn": "packet",
+     "text": "print()",
+     "x": 1560,
+     "y": 640,
+     "to": [
+      2150,
+      320
+     ],
+     "n": 2,
+     "every": 0.6,
+     "d": 1.4,
+     "at": 2
+    }
+   ]
+  },
+  {
+   "title": "예전 vs 지금",
+   "beats": 6,
+   "desc": "직접 타이핑 vs 말로 설명 비교 → 결론 쾅",
+   "head": {
+    "text": "예전 vs 지금",
+    "sub": "코딩하는 방식이 바뀌었다"
+   },
+   "items": [
+    {
+     "fn": "vs",
+     "y": 560,
+     "left": {
+      "icon": "code",
+      "label": "직접 타이핑",
+      "sub": "문법부터 외우기"
+     },
+     "right": {
+      "icon": "chat",
+      "label": "말로 설명",
+      "sub": "AI가 코드 작성",
+      "hot": true
+     },
+     "at": 0.3,
+     "midAt": 1.2
+    },
+    {
+     "fn": "arrow",
+     "pts": [
+      [
+       560,
+       880
+      ],
+      [
+       960,
+       930
+      ],
+      [
+       1360,
+       880
+      ]
+     ],
+     "lw": 7,
+     "at": 2.6,
+     "d": 0.6
+    },
+    {
+     "fn": "slam",
+     "text": "아이디어 → 결과까지 훨씬 빠르게",
+     "y": 980,
+     "size": 54,
+     "color": "pu",
+     "o": {
+      "from": 1.7
+     },
+     "at": 4.2
+    }
+   ]
+  },
+  {
+   "title": "바이브 코딩 루프",
+   "beats": 6,
+   "desc": "아이디어 → 프롬프트 → 코드 → 실행 4노드 릴레이",
+   "head": {
+    "tag": "1단계",
+    "text": "바이브 코딩 루프"
+   },
+   "items": [
+    {
+     "fn": "flow",
+     "y": 470,
+     "nodes": [
+      {
+       "icon": "bulb",
+       "label": "아이디어",
+       "sub": "무엇을 만들까"
+      },
+      {
+       "icon": "chat",
+       "label": "프롬프트",
+       "sub": "말로 설명"
+      },
+      {
+       "icon": "code",
+       "label": "코드 생성",
+       "sub": "AI가 작성"
+      },
+      {
+       "icon": "play",
+       "label": "실행",
+       "sub": "바로 확인"
+      }
+     ],
+     "packet": {
+      "text": "\"버튼 만들어줘\"",
+      "at": 2.5,
+      "every": 0.6,
+      "n": 4,
+      "d": 1.6
+     }
+    },
+    {
+     "fn": "reveal",
+     "text": "설명 → 생성 → 실행 → 다시 설명",
+     "y": 890,
+     "size": 46,
+     "font": "S",
+     "o": {
+      "by": "word"
+     },
+     "at": 3.2
+    },
+    {
+     "fn": "pill",
+     "text": "반복할수록 정확해짐",
+     "x": 1780,
+     "y": 960,
+     "size": 30,
+     "align": "right",
+     "at": 4.6
+    }
+   ]
+  },
+  {
+   "title": "1분 시연",
+   "beats": 6,
+   "desc": "모니터 주소창에 한 줄 → 오른쪽 AI 응답 코드 → 완성 쾅",
+   "head": {
+    "text": "1분 시연",
+    "sub": "프롬프트 한 줄로 웹페이지",
+    "align": "right"
+   },
+   "items": [
+    {
+     "fn": "device",
+     "device": "monitor",
+     "x": 600,
+     "y": 520,
+     "w": 860,
+     "url": "버튼을 누르면 배경색이 바뀌는 페이지 만들어줘",
+     "typeD": 2,
+     "result": "완성! ✓",
+     "resultSub": "index.html",
+     "resultAt": 3.4
+    },
+    {
+     "fn": "terminal",
+     "x": 1440,
+     "y": 600,
+     "w": 640,
+     "h": 520,
+     "title": "AI 응답",
+     "at": 0.6,
+     "lines": [
+      [
+       "<button id=\"b\">눌러!</button>",
+       0.4
+      ],
+      [
+       "b.onclick = () => {",
+       0.9
+      ],
+      [
+       "  body.style.background",
+       1.4,
+       "pl"
+      ],
+      [
+       "    = randomColor();",
+       1.9,
+       "pl"
+      ],
+      [
+       "}",
+       2.3
+      ],
+      [
+       "✓ index.html 저장",
+       2.8,
+       "pu"
+      ]
+     ]
+    },
+    {
+     "fn": "slam",
+     "text": "타이핑 0줄",
+     "x": 1440,
+     "y": 960,
+     "size": 60,
+     "color": "pu",
+     "o": {
+      "from": 1.8
+     },
+     "at": 4.4
+    }
+   ]
+  },
+  {
+   "title": "좋은 프롬프트",
+   "beats": 4,
+   "desc": "프롬프트 4요소 카드가 0.6박마다 내려앉음",
+   "head": {
+    "text": "좋은 프롬프트",
+    "sub": "4가지만 기억"
+   },
+   "items": [
+    {
+     "fn": "cards",
+     "y": 600,
+     "h": 440,
+     "step": 0.6,
+     "cards": [
+      {
+       "icon": "target",
+       "head": "목표",
+       "body": "무엇을 만들지",
+       "sub": "한 문장으로"
+      },
+      {
+       "icon": "key",
+       "head": "조건",
+       "body": "꼭 지킬 것",
+       "sub": "언어·화면·규칙"
+      },
+      {
+       "icon": "doc",
+       "head": "예시",
+       "body": "원하는 모습",
+       "sub": "입력과 출력"
+      },
+      {
+       "icon": "check",
+       "head": "확인",
+       "body": "검증 방법",
+       "sub": "어떻게 테스트?"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "title": "주의",
+   "beats": 4,
+   "glitch": true,
+   "desc": "복붙 금지 도장 + 단어 연타",
+   "head": {
+    "text": "주의",
+    "color": "pu"
+   },
+   "items": [
+    {
+     "fn": "punch",
+     "words": [
+      "그냥 복붙?",
+      "읽고 이해",
+      "직접 검증"
+     ],
+     "x": 640,
+     "y": 560,
+     "size": 130,
+     "step": 1,
+     "hot": 2,
+     "kinds": [
+      "glitchText",
+      "flipIn",
+      "slam"
+     ]
+    },
+    {
+     "fn": "cross",
+     "x": 1460,
+     "y": 470,
+     "size": 120,
+     "text": "NO COPY",
+     "sub": "설명할 수 있어야 내 코드",
+     "at": 0.3
+    },
+    {
+     "fn": "focus",
+     "x": 640,
+     "y": 560,
+     "w": 820,
+     "h": 230,
+     "at": 2
+    }
+   ]
+  },
+  {
+   "title": "시작 3단계",
+   "beats": 4,
+   "desc": "번호 단계 + 아이콘 공전",
+   "head": {
+    "tag": "오늘",
+    "text": "시작 3단계"
+   },
+   "items": [
+    {
+     "fn": "steps",
+     "x": 700,
+     "y": 590,
+     "w": 980,
+     "gap": 140,
+     "step": 0.6,
+     "items": [
+      [
+       "아이디어 한 줄",
+       "무엇을 만들지 적기"
+      ],
+      [
+       "AI와 대화",
+       "프롬프트 4요소"
+      ],
+      [
+       "실행 · 검증",
+       "직접 눌러 보기"
+      ]
+     ]
+    },
+    {
+     "fn": "orbit",
+     "x": 1500,
+     "y": 590,
+     "r": 250,
+     "br": 50,
+     "icons": [
+      "bulb",
+      "chat",
+      "code",
+      "play",
+      "check",
+      "rocket"
+     ],
+     "hot": 5,
+     "at": 0.4
+    },
+    {
+     "fn": "icon",
+     "name": "laptop",
+     "x": 1500,
+     "y": 590,
+     "size": 120,
+     "hot": true,
+     "at": 0.2
+    },
+    {
+     "fn": "pill",
+     "text": "준비물은 브라우저 하나",
+     "x": 700,
+     "y": 960,
+     "size": 30,
+     "at": 2.2
+    },
+    {
+     "fn": "rings",
+     "x": 1500,
+     "y": 590,
+     "r": 430,
+     "at": 3
+    }
+   ]
+  },
+  {
+   "title": "피날레",
+   "beats": 4,
+   "desc": "떠다니는 도형 위로 '지금 시작!' 글자 낙하 + 버스트",
+   "items": [
+    {
+     "fn": "particles",
+     "n": 26
+    },
+    {
+     "fn": "reveal",
+     "text": "첫 프롬프트를 보내 보세요",
+     "y": 330,
+     "size": 56,
+     "font": "S",
+     "at": 0.2
+    },
+    {
+     "fn": "letterDrop",
+     "text": "지금 시작!",
+     "y": 560,
+     "size": 230,
+     "color": "pu",
+     "at": 0.6
+    },
+    {
+     "fn": "burst",
+     "y": 560,
+     "seed": 21,
+     "at": 1.8
+    },
+    {
+     "fn": "rings",
+     "y": 560,
+     "at": 1.8,
+     "r": 1100
+    },
+    {
+     "fn": "tags",
+     "words": [
+      "ChatGPT",
+      "Claude",
+      "Gemini",
+      "Cursor"
+     ],
+     "y": 820,
+     "size": 34,
+     "step": 0.2,
+     "hot": 1,
+     "at": 2.2
+    }
+   ]
+  }
+ ]
+}
