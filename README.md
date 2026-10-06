@@ -1,4 +1,4 @@
-# Motion Agent — 수업 자료를 30초 모션그래픽으로
+# Motion Agent : 수업 자료를 30초 모션그래픽으로
 
 PDF·PPTX·DOCX 수업 자료를 넣고 질문 몇 개에 답하면, 음악 비트에 맞춘 **키네틱 타이포그래피 영상(mp4, 1920×1080, 30fps)** 을 만들어 주는 Claude Code 플러그인입니다.
 플러그인 안에는 `yangphago-motion` 스킬 하나가 들어 있습니다.
